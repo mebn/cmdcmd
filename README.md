@@ -23,19 +23,9 @@ On the first launch, macOS asks for **Input Monitoring** permission (System Sett
 
 ## Config
 
-The config file is created on first run at `~/Library/Application Support/cmdcmd/config.json` on macOS, or `%AppData%\cmdcmd\config.json` on Windows:
+Most settings live in the app itself: the agent, model and effort pickers, and the custom agent's command. Everything else is in a config file, which you can open from the menu-bar icon (**Edit config…**). It's created on first run at `~/Library/Application Support/cmdcmd/config.jsonc` on macOS, or `%AppData%\cmdcmd\config.jsonc` on Windows.
 
-```json
-{
-  "cwd": "~",
-  "permissionMode": "auto",
-  "model": "",
-  "claudePath": ""
-}
-```
-
-- `cwd` is where Claude runs, so project-level skills and CLAUDE.md are loaded from there. User-level skills (`~/.claude/skills`) are always available.
-- `permissionMode` is passed to `--permission-mode`.
+It's JSON with comments, and every setting is documented inline with its options. cmdcmd rewrites the file when you change a setting in the app, so comments you add yourself aren't kept. Restart cmdcmd after editing it.
 
 ## Shortcuts
 

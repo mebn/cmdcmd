@@ -1,5 +1,3 @@
-// Package session runs a long-lived Claude Code process in stream-json mode
-// and turns its output into a small set of UI events.
 package session
 
 import (
@@ -14,75 +12,116 @@ import (
 	"sync"
 )
 
-// Event is what the UI receives. Type is one of:
-//
-//	init        session started; SessionID is set
-//	block       a new assistant text block starts
-//	text        streamed assistant text (Text)
-//	tool        Claude called a tool (Tool, Text = short summary)
-//	tool_error  the last tool call failed (Text)
-//	done        the turn finished (IsError, Text on error, Cost)
-//	exit        the claude process exited (Text = reason)
-type Event struct {
-	Type      string  `json:"type"`
-	Text      string  `json:"text,omitempty"`
-	Tool      string  `json:"tool,omitempty"`
-	SessionID string  `json:"sessionId,omitempty"`
-	IsError   bool    `json:"isError,omitempty"`
-	Cost      float64 `json:"cost,omitempty"`
-}
-
-// Options configure how claude is started.
-type Options struct {
-	ClaudePath     string
-	Cwd            string
-	PermissionMode string
-	Model          string
-	Env            []string
-}
-
-// Session is one Claude Code conversation. The process is started on the
-// first Send and resumed by session ID if it dies, so a conversation survives
-// the window closing and the process crashing.
-type Session struct {
+// Claude is one Claude Code conversation in a long-lived `claude -p`
+// stream-json process. The process is resumed by session ID if it dies or is
+// restarted with new settings, so the conversation survives both.
+type Claude struct {
 	opts    Options
 	onEvent func(Event)
 
-	mu        sync.Mutex
-	cmd       *exec.Cmd
-	stdin     io.WriteCloser
-	sessionID string
-	closed    bool
+	mu             sync.Mutex
+	cmd            *exec.Cmd
+	stdin          io.WriteCloser
+	sessionID      string
+	closed         bool
+	busy           int  // turns sent but not finished
+	restartPending bool // apply new settings once the current turn ends
 }
 
-// New creates a session; no process is started until the first Send.
-func New(opts Options, onEvent func(Event)) *Session {
-	return &Session{opts: opts, onEvent: onEvent}
+// NewClaude creates a session; no process is started until Start or Send.
+func NewClaude(opts Options, onEvent func(Event)) *Claude {
+	return &Claude{opts: opts, onEvent: onEvent}
 }
 
 // ID returns the Claude Code session ID once known.
-func (s *Session) ID() string {
+func (s *Claude) ID() string {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	return s.sessionID
 }
 
-// Send writes a user message to Claude, starting the process if needed.
-func (s *Session) Send(text string) error {
+// Start launches the claude process ahead of the first message, so the
+// first reply is faster and the slash command list arrives early.
+func (s *Claude) Start() error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	return s.ensureStarted()
+}
+
+// Send writes a user message to Claude, starting the process if needed.
+func (s *Claude) Send(text string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if err := s.ensureStarted(); err != nil {
+		return err
+	}
+	s.busy++
+	return s.write(map[string]any{
+		"type":    "user",
+		"message": map[string]any{"role": "user", "content": text},
+	})
+}
+
+// Configure switches model and effort. claude takes these only at launch, so
+// the process restarts with --resume and the conversation carries on; if a
+// turn is running, the restart waits until it ends.
+func (s *Claude) Configure(model, effort string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.opts.Model, s.opts.Effort = model, effort
+	if s.cmd == nil {
+		return
+	}
+	if s.busy > 0 {
+		s.restartPending = true
+		return
+	}
+	s.restart()
+}
+
+// restart stops claude and starts it again with the current options.
+// Callers must hold s.mu.
+func (s *Claude) restart() {
+	s.restartPending = false
+	s.stop()
+	if err := s.ensureStarted(); err != nil {
+		go s.onEvent(Event{Type: "exit", Text: err.Error()})
+	}
+}
+
+// stop kills the process without reporting an exit. Callers must hold s.mu.
+func (s *Claude) stop() {
+	if s.cmd != nil {
+		s.stdin.Close()
+		s.cmd.Process.Kill()
+		s.cmd = nil
+	}
+}
+
+// ensureStarted starts claude if it is not running. Callers must hold s.mu.
+func (s *Claude) ensureStarted() error {
 	if s.closed {
 		return errors.New("session is closed")
 	}
-	if s.cmd == nil {
-		if err := s.start(); err != nil {
-			return err
-		}
+	if s.cmd != nil {
+		return nil
 	}
-	msg := map[string]any{
-		"type":    "user",
-		"message": map[string]any{"role": "user", "content": text},
+	if err := s.start(); err != nil {
+		return err
 	}
+	// The same handshake the Agent SDK does; the reply lists every slash
+	// command and skill with its description.
+	return s.write(map[string]any{
+		"type":       "control_request",
+		"request_id": initRequestID,
+		"request":    map[string]any{"subtype": "initialize"},
+	})
+}
+
+const initRequestID = "cmdcmd-init"
+
+// write sends one stream-json line. Callers must hold s.mu.
+func (s *Claude) write(msg any) error {
 	line, _ := json.Marshal(msg)
 	if _, err := s.stdin.Write(append(line, '\n')); err != nil {
 		return fmt.Errorf("writing to claude: %w", err)
@@ -92,19 +131,15 @@ func (s *Session) Send(text string) error {
 
 // Close stops the claude process. The conversation stays on disk and can
 // still be resumed with `claude --resume <id>`.
-func (s *Session) Close() {
+func (s *Claude) Close() {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.closed = true
-	if s.cmd != nil {
-		s.stdin.Close()
-		s.cmd.Process.Kill()
-		s.cmd = nil
-	}
+	s.stop()
 }
 
 // start launches claude. Callers must hold s.mu.
-func (s *Session) start() error {
+func (s *Claude) start() error {
 	args := []string{
 		"-p",
 		"--input-format", "stream-json",
@@ -115,14 +150,17 @@ func (s *Session) start() error {
 	if s.opts.PermissionMode != "" {
 		args = append(args, "--permission-mode", s.opts.PermissionMode)
 	}
-	if s.opts.Model != "" {
+	if s.opts.Model != "" && s.opts.Model != "default" {
 		args = append(args, "--model", s.opts.Model)
+	}
+	if s.opts.Effort != "" {
+		args = append(args, "--effort", s.opts.Effort)
 	}
 	if s.sessionID != "" {
 		args = append(args, "--resume", s.sessionID)
 	}
 
-	cmd := exec.Command(s.opts.ClaudePath, args...)
+	cmd := exec.Command(s.opts.Path, args...)
 	cmd.Dir = s.opts.Cwd
 	cmd.Env = s.opts.Env
 	hideWindow(cmd)
@@ -137,7 +175,7 @@ func (s *Session) start() error {
 	var stderr bytes.Buffer
 	cmd.Stderr = &limitedWriter{buf: &stderr, max: 8 << 10}
 	if err := cmd.Start(); err != nil {
-		return fmt.Errorf("starting claude (%s): %w", s.opts.ClaudePath, err)
+		return fmt.Errorf("starting claude (%s): %w", s.opts.Path, err)
 	}
 	s.cmd = cmd
 	s.stdin = stdin
@@ -146,7 +184,7 @@ func (s *Session) start() error {
 	return nil
 }
 
-func (s *Session) read(cmd *exec.Cmd, stdout io.Reader, stderr *bytes.Buffer) {
+func (s *Claude) read(cmd *exec.Cmd, stdout io.Reader, stderr *bytes.Buffer) {
 	r := bufio.NewReaderSize(stdout, 1<<20)
 	for {
 		line, err := r.ReadBytes('\n')
@@ -159,13 +197,15 @@ func (s *Session) read(cmd *exec.Cmd, stdout io.Reader, stderr *bytes.Buffer) {
 	}
 	waitErr := cmd.Wait()
 
+	// A process that was stopped on purpose (Close, restart) is not reported.
 	s.mu.Lock()
-	if s.cmd == cmd {
+	current := s.cmd == cmd
+	if current {
 		s.cmd = nil
+		s.busy = 0
 	}
-	closed := s.closed
 	s.mu.Unlock()
-	if closed {
+	if !current {
 		return
 	}
 
@@ -185,7 +225,20 @@ type streamMessage struct {
 	IsError         bool    `json:"is_error"`
 	Result          string  `json:"result"`
 	TotalCostUSD    float64 `json:"total_cost_usd"`
-	Event           struct {
+	Response        struct {
+		Subtype   string `json:"subtype"`
+		RequestID string `json:"request_id"`
+		Response  struct {
+			Commands []Command `json:"commands"`
+			Models   []struct {
+				Value       string   `json:"value"`
+				DisplayName string   `json:"displayName"`
+				Description string   `json:"description"`
+				Efforts     []string `json:"supportedEffortLevels"`
+			} `json:"models"`
+		} `json:"response"`
+	} `json:"response"`
+	Event struct {
 		Type         string `json:"type"`
 		ContentBlock struct {
 			Type string `json:"type"`
@@ -208,7 +261,7 @@ type contentBlock struct {
 	Content json.RawMessage `json:"content"`
 }
 
-func (s *Session) handle(line []byte) {
+func (s *Claude) handle(line []byte) {
 	var m streamMessage
 	if err := json.Unmarshal(line, &m); err != nil {
 		return
@@ -219,6 +272,15 @@ func (s *Session) handle(line []byte) {
 	}
 
 	switch m.Type {
+	case "control_response":
+		if m.Response.RequestID == initRequestID && m.Response.Subtype == "success" {
+			var models []Model
+			for _, md := range m.Response.Response.Models {
+				models = append(models, Model{Value: md.Value, Label: md.DisplayName, Description: md.Description, Efforts: md.Efforts})
+			}
+			s.onEvent(Event{Type: "commands", Commands: visibleCommands(m.Response.Response.Commands), Models: models})
+		}
+
 	case "system":
 		if m.Subtype == "init" {
 			s.mu.Lock()
@@ -250,6 +312,14 @@ func (s *Session) handle(line []byte) {
 		}
 
 	case "result":
+		s.mu.Lock()
+		if s.busy > 0 {
+			s.busy--
+		}
+		if s.busy == 0 && s.restartPending {
+			s.restart()
+		}
+		s.mu.Unlock()
 		ev := Event{Type: "done", Cost: m.TotalCostUSD, IsError: m.IsError || m.Subtype != "success"}
 		if ev.IsError {
 			ev.Text = m.Result
@@ -259,6 +329,17 @@ func (s *Session) handle(line []byte) {
 		}
 		s.onEvent(ev)
 	}
+}
+
+// visibleCommands drops internal commands, whose names start with "__".
+func visibleCommands(all []Command) []Command {
+	out := make([]Command, 0, len(all))
+	for _, c := range all {
+		if !strings.HasPrefix(c.Name, "__") {
+			out = append(out, c)
+		}
+	}
+	return out
 }
 
 func blocks(raw json.RawMessage) []contentBlock {

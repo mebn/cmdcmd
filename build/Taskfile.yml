@@ -202,6 +202,11 @@ tasks:
       - "windows/icon.ico"
     cmds:
       - wails3 generate icons -input appicon.png -macfilename darwin/icons.icns -windowsfilename windows/icon.ico -iconcomposerinput appicon.icon -macassetdir darwin
+    env:
+      # Assets.car needs actool, which ships with Xcode but not with the
+      # Command Line Tools; use Xcode when it is installed.
+      DEVELOPER_DIR:
+        sh: '{{if eq OS "darwin"}}if [ -d /Applications/Xcode.app ]; then echo /Applications/Xcode.app/Contents/Developer; else xcode-select -p 2>/dev/null; fi{{end}}'
 
   dev:frontend:
     summary: Runs the frontend in development mode

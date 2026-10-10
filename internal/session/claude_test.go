@@ -17,7 +17,7 @@ func TestHandleTurn(t *testing.T) {
 	defer f.Close()
 
 	var events []Event
-	s := New(Options{}, func(ev Event) { events = append(events, ev) })
+	s := NewClaude(Options{}, func(ev Event) { events = append(events, ev) })
 	sc := bufio.NewScanner(f)
 	sc.Buffer(nil, 1<<20)
 	for sc.Scan() {
@@ -51,5 +51,30 @@ func TestHandleTurn(t *testing.T) {
 		if ev.Type == "done" && (ev.IsError || ev.Cost == 0) {
 			t.Errorf("done event = %+v", ev)
 		}
+	}
+}
+
+// initialize.jsonl is a trimmed reply to the initialize control request.
+func TestHandleInitialize(t *testing.T) {
+	data, err := os.ReadFile("testdata/initialize.jsonl")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var got []Event
+	s := NewClaude(Options{}, func(ev Event) { got = append(got, ev) })
+	s.handle(data)
+
+	if len(got) != 1 || got[0].Type != "commands" {
+		t.Fatalf("events = %+v, want one commands event", got)
+	}
+	var names []string
+	for _, c := range got[0].Commands {
+		names = append(names, c.Name)
+		if c.Description == "" {
+			t.Errorf("command %q has no description", c.Name)
+		}
+	}
+	if strings.Join(names, ",") != "code-review,loop,compact" {
+		t.Errorf("names = %v, want internal __ commands dropped", names)
 	}
 }

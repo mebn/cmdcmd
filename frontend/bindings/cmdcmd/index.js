@@ -10,6 +10,16 @@ export {
 import * as $models from "./models.js";
 
 /**
- * Info is shown in the window header.
+ * AgentInfo describes an agent for the picker.
+ * @typedef {$models.AgentInfo} AgentInfo
+ */
+
+/**
+ * Info describes the session for the UI.
  * @typedef {$models.Info} Info
+ */
+
+/**
+ * Selection is the chosen agent, model and effort ("" = default).
+ * @typedef {$models.Selection} Selection
  */

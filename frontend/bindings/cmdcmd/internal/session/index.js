@@ -5,14 +5,25 @@
 import * as $models from "./models.js";
 
 /**
+ * Command is a slash command or skill accepted as "/name args".
+ * @typedef {$models.Command} Command
+ */
+
+/**
  * Event is what the UI receives. Type is one of:
  * 
  * 	init        session started; SessionID is set
+ * 	commands    the available slash commands (Commands)
  * 	block       a new assistant text block starts
  * 	text        streamed assistant text (Text)
- * 	tool        Claude called a tool (Tool, Text = short summary)
+ * 	tool        the agent ran a tool (Tool, Text = short summary)
  * 	tool_error  the last tool call failed (Text)
  * 	done        the turn finished (IsError, Text on error, Cost)
- * 	exit        the claude process exited (Text = reason)
+ * 	exit        the agent process exited unexpectedly (Text = reason)
  * @typedef {$models.Event} Event
+ */
+
+/**
+ * Model is a model an agent can run, with the effort levels it supports.
+ * @typedef {$models.Model} Model
  */

@@ -10,6 +10,9 @@ vars:
   # access) to the signature, and an ad-hoc signature changes on every build,
   # so a stable "Apple Development" identity is used when one is installed.
   # Override with SIGN_IDENTITY=..., or "-" for ad-hoc.
+  # private_mac_apis lets the webview be transparent so the Liquid Glass
+  # backdrop shows through. Fine for direct distribution, not the App Store.
+  EXTRA_TAGS: '{{.EXTRA_TAGS | default "private_mac_apis"}}'
   SIGN_IDENTITY:
     sh: '{{if .SIGN_IDENTITY}}echo "{{.SIGN_IDENTITY}}"{{else}}security find-identity -v -p codesigning 2>/dev/null | grep -q "Apple Development" && echo "Apple Development" || echo "-"{{end}}'
 

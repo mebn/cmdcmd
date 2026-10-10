@@ -25,6 +25,7 @@ func init() {
 	application.RegisterEvent[application.Void]("window:shown")
 	application.RegisterEvent[application.Void]("session:new")
 	application.RegisterEvent[string]("notice")
+	application.RegisterEvent[application.Void]("agents:changed")
 }
 
 func main() {
@@ -54,16 +55,16 @@ func main() {
 	window := app.Window.NewWithOptions(application.WebviewWindowOptions{
 		Name:            "main",
 		Title:           "cmdcmd",
-		Width:           720,
-		Height:          520,
+		Width:           windowWidth,
+		Height:          windowHeight,
 		Frameless:       true,
 		DisableResize:   true,
 		Hidden:          true,
 		AlwaysOnTop:     true,
 		HideOnFocusLost: true,
-		HideOnEscape:    true,
-		BackgroundType:  application.BackgroundTypeTranslucent,
-		URL:             "/",
+		// Esc is handled in JS: it closes the slash menu first, then hides.
+		BackgroundType: application.BackgroundTypeTransparent,
+		URL:            "/",
 		Mac: application.MacWindow{
 			// A non-activating panel takes keyboard input without stealing
 			// focus from the app you were in, the way Spotlight does.
@@ -72,16 +73,19 @@ func main() {
 			CollectionBehavior: application.MacWindowCollectionBehaviorCanJoinAllSpaces |
 				application.MacWindowCollectionBehaviorFullScreenAuxiliary |
 				application.MacWindowCollectionBehaviorIgnoresCycle,
-			WindowLevel:  application.MacWindowLevelFloating,
-			Backdrop:     application.MacBackdropTranslucent,
-			CornerRadius: 14,
+			WindowLevel: application.MacWindowLevelFloating,
+			// The window is an invisible stage; the frontend draws the cards
+			// and their shadows. A transparent webview needs
+			// -tags private_mac_apis, which the Taskfile sets.
+			Backdrop:      application.MacBackdropTransparent,
+			DisableShadow: true,
 			TitleBar: application.MacTitleBar{
 				AppearsTransparent: true,
 				Hide:               true,
 			},
 		},
 		Windows: application.WindowsWindow{
-			BackdropType:    application.Acrylic,
+			BackdropType:    application.None,
 			HiddenOnTaskbar: true,
 		},
 	})

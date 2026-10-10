@@ -12,6 +12,7 @@ import type * as session$0 from "../../../../../cmdcmd/internal/session/models.j
 declare module "@wailsio/runtime" {
     namespace Events {
         interface CustomEvents {
+            "agents:changed": void;
             "claude": session$0.Event;
             "notice": string;
             "session:new": void;

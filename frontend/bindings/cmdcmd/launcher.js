@@ -13,7 +13,27 @@ import { Call as $Call, CancellablePromise as $CancellablePromise } from "@wails
 
 // eslint-disable-next-line @typescript-eslint/ban-ts-comment
 // @ts-ignore: Unused imports
+import * as session$0 from "./internal/session/models.js";
+
+// eslint-disable-next-line @typescript-eslint/ban-ts-comment
+// @ts-ignore: Unused imports
 import * as $models from "./models.js";
+
+/**
+ * GetAgents lists the agents and their models.
+ * @returns {$CancellablePromise<$models.AgentInfo[] | null>}
+ */
+export function GetAgents() {
+    return $Call.ByID(3355430490);
+}
+
+/**
+ * GetCommands returns the slash commands the current agent accepts.
+ * @returns {$CancellablePromise<session$0.Command[] | null>}
+ */
+export function GetCommands() {
+    return $Call.ByID(2213733162);
+}
 
 /**
  * GetInfo returns static details for the UI.
@@ -24,7 +44,15 @@ export function GetInfo() {
 }
 
 /**
- * Hide hides the window. The Claude session keeps running.
+ * GetSelection returns the current agent, model and effort.
+ * @returns {$CancellablePromise<$models.Selection>}
+ */
+export function GetSelection() {
+    return $Call.ByID(1197460314);
+}
+
+/**
+ * Hide hides the window. The agent keeps running.
  * @returns {$CancellablePromise<void>}
  */
 export function Hide() {
@@ -49,7 +77,7 @@ export function OpenPermissionSettings() {
 }
 
 /**
- * Quit exits cmdcmd, stopping the Claude process.
+ * Quit exits cmdcmd, stopping the agent.
  * @returns {$CancellablePromise<void>}
  */
 export function Quit() {
@@ -57,7 +85,7 @@ export function Quit() {
 }
 
 /**
- * Send sends a message to the current Claude session.
+ * Send sends a message to the current agent.
  * @param {string} text
  * @returns {$CancellablePromise<void>}
  */
@@ -66,8 +94,28 @@ export function Send(text) {
 }
 
 /**
- * Show brings the window up on the screen the cursor is on and focuses the
- * input.
+ * SetCustomCommand saves the custom agent's shell command. If the custom
+ * agent is in use, it restarts with the new command.
+ * @param {string} command
+ * @returns {$CancellablePromise<void>}
+ */
+export function SetCustomCommand(command) {
+    return $Call.ByID(2153164880, command);
+}
+
+/**
+ * SetSelection switches agent, model or effort and saves the choice. A new
+ * agent starts a new conversation; a new model or effort keeps it.
+ * @param {$models.Selection} sel
+ * @returns {$CancellablePromise<void>}
+ */
+export function SetSelection(sel) {
+    return $Call.ByID(699505990, sel);
+}
+
+/**
+ * Show brings the window up, centered on the screen the cursor is on, and
+ * focuses the input.
  * @returns {$CancellablePromise<void>}
  */
 export function Show() {

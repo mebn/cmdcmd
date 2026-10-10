@@ -4,6 +4,7 @@ import (
 	"strconv"
 	"unsafe"
 
+	"github.com/wailsapp/wails/v3/pkg/application"
 	"golang.org/x/sys/windows"
 )
 
@@ -14,6 +15,22 @@ var (
 )
 
 const monitorDefaultToNearest = 2
+
+// placeWindow centers the window on the screen under the cursor.
+func placeWindow(app *application.App, window *application.WebviewWindow, width, height int) {
+	screen := app.Screen.GetByID(cursorScreenID())
+	if screen == nil {
+		screen, _ = window.GetScreen()
+	}
+	window.SetSize(width, height)
+	if screen == nil {
+		window.Center()
+		return
+	}
+	area := screen.WorkArea
+	window.SetScreen(screen)
+	window.SetRelativePosition((area.Width-width)/2, (area.Height-height)/2)
+}
 
 // cursorScreenID returns the Wails screen ID (the HMONITOR) of the display
 // under the cursor.
