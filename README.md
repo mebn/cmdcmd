@@ -2,6 +2,11 @@
 
 A Spotlight-style launcher for Claude Code. Double-tap **⌘** (macOS) or **Ctrl** (Windows) to open a chat window backed by a Claude Code session running in the background. Hiding the window (Esc, or clicking away) leaves the session running.
 
+<img width="1800" height="1169" alt="closed" src="https://github.com/user-attachments/assets/888a406b-8e88-4b0a-a8ef-80bcbfef60ce" />
+
+<img width="1800" height="1169" alt="open" src="https://github.com/user-attachments/assets/7ef372c1-8425-47a8-8bed-12c4427ebda9" />
+
+
 ## How it works
 
 - `internal/hotkey`: a system-wide double-tap detector. On macOS it uses a listen-only `CGEventTap`; on Windows, a `WH_KEYBOARD_LL` hook.
