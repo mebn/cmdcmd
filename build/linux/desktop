@@ -1,0 +1,13 @@
+[Desktop Entry]
+Version=1.0
+Name=cmdcmd
+Comment=Spotlight-style launcher for Claude Code sessions
+# The Exec line includes %u to pass the URL to the application
+Exec=/usr/local/bin/cmdcmd %u
+Terminal=false
+Type=Application
+Icon=cmdcmd
+Categories=Utility;
+StartupWMClass=cmdcmd
+
+ 

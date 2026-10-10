@@ -1,0 +1,29 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8"/>
+    <meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+    <title>cmdcmd</title>
+</head>
+<body>
+<div id="panel">
+    <header>
+        <span id="status" class="dot" title="idle"></span>
+        <span class="title">cmdcmd</span>
+        <span id="meta" class="meta"></span>
+        <button id="new" title="New session (⌘N)">New session</button>
+    </header>
+    <div id="notice" hidden><span id="notice-text"></span><button id="notice-settings" hidden>Open Settings</button></div>
+    <main id="history">
+        <div id="empty">
+            <p>Ask Claude anything, or run a skill with <code>/skill-name</code>.</p>
+            <p class="keys"><kbd>Enter</kbd> send · <kbd>Shift</kbd><kbd>Enter</kbd> newline · <kbd>Esc</kbd> hide · <kbd>⌘N</kbd> new session · <kbd>⌘Q</kbd> quit</p>
+        </div>
+    </main>
+    <footer>
+        <textarea id="input" rows="1" placeholder="Message Claude…" autofocus spellcheck="false"></textarea>
+    </footer>
+</div>
+<script src="./src/main.js" type="module"></script>
+</body>
+</html>
