@@ -1,0 +1,91 @@
+# Builds cmdcmd for macOS and Windows on every push to main and publishes
+# both as a GitHub release. The in-app updater (menu bar → Check for
+# Updates…) installs the latest release.
+name: Release
+
+on:
+  push:
+    branches: [main]
+    paths-ignore: ["**.md"]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release
+  cancel-in-progress: false
+
+env:
+  WAILS_VERSION: v3.0.0-beta.28
+  TAG: v0.1.${{ github.run_number }}
+
+jobs:
+  macos:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Install Wails
+        run: |
+          go install github.com/wailsapp/wails/v3/cmd/wails3@$WAILS_VERSION
+          echo "$(go env GOPATH)/bin" >> "$GITHUB_PATH"
+      - name: Test
+        run: go test ./internal/...
+      - name: Build
+        run: |
+          echo "$TAG" > version.txt
+          wails3 task darwin:package:universal
+          ditto -c -k --keepParent bin/cmdcmd.app cmdcmd-macos-universal.zip
+      - uses: actions/upload-artifact@v4
+        with:
+          name: macos
+          path: cmdcmd-macos-universal.zip
+
+  windows:
+    runs-on: windows-latest
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Install Wails
+        run: |
+          go install github.com/wailsapp/wails/v3/cmd/wails3@$WAILS_VERSION
+          echo "$(go env GOPATH)/bin" >> "$GITHUB_PATH"
+      - name: Build
+        run: |
+          echo "$TAG" > version.txt
+          wails3 build
+          mv bin/cmdcmd.exe cmdcmd-windows-amd64.exe
+      - uses: actions/upload-artifact@v4
+        with:
+          name: windows
+          path: cmdcmd-windows-amd64.exe
+
+  release:
+    needs: [macos, windows]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          merge-multiple: true
+      - name: Publish
+        env:
+          GH_TOKEN: ${{ github.token }}
+          NOTES: ${{ github.event.head_commit.message }}
+        run: |
+          gh release create "$TAG" cmdcmd-macos-universal.zip cmdcmd-windows-amd64.exe \
+            --repo "$GITHUB_REPOSITORY" --target "$GITHUB_SHA" \
+            --title "cmdcmd $TAG" --notes "${NOTES:-Manual build}"

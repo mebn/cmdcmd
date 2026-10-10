@@ -20,6 +20,15 @@ import * as session$0 from "./internal/session/models.js";
 import * as $models from "./models.js";
 
 /**
+ * CheckForUpdates looks for a newer release on GitHub and, if the user
+ * agrees, downloads it, replaces the running app and relaunches.
+ * @returns {$CancellablePromise<void>}
+ */
+export function CheckForUpdates() {
+    return $Call.ByID(3622632487);
+}
+
+/**
  * GetAgents lists the agents and their models.
  * @returns {$CancellablePromise<$models.AgentInfo[] | null>}
  */
@@ -129,6 +138,14 @@ export function SetCustomCommand(command) {
  */
 export function SetSelection(sel) {
     return $Call.ByID(699505990, sel);
+}
+
+/**
+ * ShortcutLabel is the hotkey as shown to the user, e.g. "⌘ ⌘".
+ * @returns {$CancellablePromise<string>}
+ */
+export function ShortcutLabel() {
+    return $Call.ByID(601427440);
 }
 
 /**

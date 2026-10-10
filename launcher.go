@@ -14,10 +14,12 @@ import (
 )
 
 // The window is a fixed, transparent stage; the visible cards are drawn and
-// animated by the frontend inside it, so the window itself never resizes.
+// animated by the frontend inside it, so the window itself never resizes. It
+// is larger than the cards so their shadows fit inside it; anything past the
+// window edge would be cut off.
 const (
-	windowWidth  = 820
-	windowHeight = 720
+	windowWidth  = 880
+	windowHeight = 780
 )
 
 // Launcher is bound to the frontend; its exported methods are callable from JS.
@@ -26,6 +28,7 @@ type Launcher struct {
 	window *application.WebviewWindow
 	env    []string
 	notice string
+	hotkey hotkey.Spec
 
 	mu           sync.Mutex
 	cfg          config.Config
@@ -42,8 +45,18 @@ func NewLauncher() *Launcher {
 		l.notice = "Could not read config: " + err.Error()
 	}
 	l.cfg = cfg
+	l.hotkey, err = hotkey.Parse(cfg.Hotkey)
+	if err != nil {
+		l.notice = err.Error() + "; using the default"
+		l.hotkey, _ = hotkey.Parse(hotkey.Default)
+	}
 	l.agent = l.newAgent()
 	return l
+}
+
+// ShortcutLabel is the hotkey as shown to the user, e.g. "⌘ ⌘".
+func (l *Launcher) ShortcutLabel() string {
+	return l.hotkey.Label
 }
 
 // attach connects the launcher to the running app, asks for the permissions
@@ -52,17 +65,26 @@ func (l *Launcher) attach(app *application.App, window *application.WebviewWindo
 	l.app = app
 	l.window = window
 	l.startAgent()
-	err := hotkey.Start(l.Toggle, func() {
-		// Input Monitoring was granted while running; the hotkey is live now.
-		l.setNotice("")
-	})
+	err := l.startHotkey()
 	// Folder prompts come after the Input Monitoring prompt so they queue up
 	// behind it instead of covering it.
 	go requestFolderAccess()
 	if err != nil {
 		l.setNotice(err.Error())
-		l.Show() // the hotkey can't open the window yet, so show it now
+		l.Show() // the hotkey can't open the window, so show it now
 	}
+}
+
+// startHotkey listens for the configured hotkey: a double tap through the
+// keyboard hook, or a key combination through a global shortcut.
+func (l *Launcher) startHotkey() error {
+	if l.hotkey.DoubleTap {
+		return hotkey.Start(l.hotkey.Modifier, l.Toggle, func() {
+			// Input Monitoring was granted while running; the hotkey is live.
+			l.setNotice("")
+		})
+	}
+	return l.app.GlobalShortcut.Register(l.hotkey.Accelerator, func() { go l.Toggle() })
 }
 
 func (l *Launcher) setNotice(notice string) {
@@ -312,7 +334,7 @@ func (l *Launcher) GetInfo() Info {
 	l.mu.Lock()
 	defer l.mu.Unlock()
 	return Info{
-		Shortcut:        hotkey.Description,
+		Shortcut:        l.hotkey.Label,
 		Cwd:             l.cfg.ResolvedCwd(),
 		Notice:          l.notice,
 		CanOpenSettings: hotkey.SettingsURL != "",

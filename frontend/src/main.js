@@ -511,7 +511,7 @@ async function loadAgents() {
 // has more room, and keep it inside the window.
 function positionPicker() {
     if (!openKind) return;
-    const gap = 10, edge = 12;
+    const gap = 10, edge = 40; // edge leaves room for the popover's shadow
     const button = pickerButtons[openKind].getBoundingClientRect();
     const width = pickerPop.offsetWidth;
     const above = button.top - gap - edge;

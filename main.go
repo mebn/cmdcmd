@@ -7,7 +7,6 @@ import (
 	"runtime"
 
 	"cmdcmd/internal/config"
-	"cmdcmd/internal/hotkey"
 	"cmdcmd/internal/session"
 
 	"github.com/wailsapp/wails/v3/pkg/application"
@@ -30,6 +29,7 @@ func init() {
 }
 
 func main() {
+	cleanupUpdate()
 	launcher := NewLauncher()
 
 	app := application.New(application.Options{
@@ -97,7 +97,7 @@ func main() {
 	} else {
 		tray.SetIcon(trayIcon)
 	}
-	tray.SetTooltip("cmdcmd (" + hotkey.Description + ")")
+	tray.SetTooltip("cmdcmd (" + launcher.ShortcutLabel() + ")")
 	tray.OnClick(launcher.Toggle)
 	tray.SetMenu(trayMenu(app, launcher))
 
@@ -112,7 +112,7 @@ func main() {
 
 func trayMenu(app *application.App, launcher *Launcher) *application.Menu {
 	menu := app.NewMenu()
-	menu.Add("Open cmdcmd  " + hotkey.Description).OnClick(func(*application.Context) { launcher.Show() })
+	menu.Add("Open cmdcmd  " + launcher.ShortcutLabel()).OnClick(func(*application.Context) { launcher.Show() })
 	menu.Add("New session").OnClick(func(*application.Context) {
 		launcher.NewSession()
 		launcher.Show()
@@ -123,6 +123,9 @@ func trayMenu(app *application.App, launcher *Launcher) *application.Menu {
 			openFile(path)
 		}
 	})
+	menu.AddSeparator()
+	menu.Add("Check for Updates…").OnClick(func(*application.Context) { launcher.CheckForUpdates() })
+	menu.Add("Version " + version).SetEnabled(false)
 	menu.AddSeparator()
 	menu.Add("Quit cmdcmd").OnClick(func(*application.Context) { app.Quit() })
 	return menu

@@ -3,6 +3,7 @@ package hotkey
 import (
 	"errors"
 	"runtime"
+	"slices"
 	"time"
 	"unsafe"
 
@@ -12,18 +13,21 @@ import (
 // ErrPermission is never returned on Windows; low-level hooks need no grant.
 var ErrPermission = errors.New("permission denied")
 
-// Description is the shortcut as shown to the user.
-const Description = "Ctrl Ctrl"
-
 const (
 	whKeyboardLL = 13
 	wmKeyDown    = 0x0100
 	wmKeyUp      = 0x0101
 	wmSysKeyDown = 0x0104
 	wmSysKeyUp   = 0x0105
-	vkLControl   = 0xA2
-	vkRControl   = 0xA3
 )
+
+// Virtual-key codes (generic, left, right) for each modifier.
+var modVKs = map[Modifier][]uint32{
+	Ctrl:  {0x11, 0xA2, 0xA3},
+	Shift: {0x10, 0xA0, 0xA1},
+	Alt:   {0x12, 0xA4, 0xA5},
+	Cmd:   {0x5B, 0x5C}, // Windows keys
+}
 
 type kbdllHookStruct struct {
 	VkCode      uint32
@@ -54,9 +58,9 @@ type msg struct {
 // SettingsURL is empty on Windows; low-level hooks need no grant.
 const SettingsURL = ""
 
-// Start listens for a Ctrl double tap and calls fire when it happens. ready
+// Start listens for a double tap of mod and calls fire when it happens. ready
 // is unused: Windows needs no permission, so Start never has to wait.
-func Start(fire func(), ready func()) error {
+func Start(mod Modifier, fire func(), ready func()) error {
 	d := newDetector(fire)
 	errc := make(chan error, 1)
 
@@ -68,13 +72,13 @@ func Start(fire func(), ready func()) error {
 		callback := windows.NewCallback(func(nCode int, wParam uintptr, lParam uintptr) uintptr {
 			if nCode == 0 {
 				k := *(**kbdllHookStruct)(unsafe.Pointer(&lParam))
-				isCtrl := k.VkCode == vkLControl || k.VkCode == vkRControl
+				isTarget := slices.Contains(modVKs[mod], k.VkCode)
 				switch {
-				case !isCtrl && (wParam == wmKeyDown || wParam == wmSysKeyDown):
+				case !isTarget && (wParam == wmKeyDown || wParam == wmSysKeyDown):
 					d.other()
-				case isCtrl && (wParam == wmKeyDown || wParam == wmSysKeyDown):
+				case isTarget && (wParam == wmKeyDown || wParam == wmSysKeyDown):
 					d.modDown(time.Now())
-				case isCtrl && (wParam == wmKeyUp || wParam == wmSysKeyUp):
+				case isTarget && (wParam == wmKeyUp || wParam == wmSysKeyUp):
 					d.modUp(time.Now())
 				}
 			}

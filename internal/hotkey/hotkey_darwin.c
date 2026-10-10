@@ -6,36 +6,18 @@
 #include "_cgo_export.h"
 
 static CFMachPortRef cmdcmdTap = NULL;
-static bool cmdcmdCmdDown = false;
 
+// Forwards key presses and modifier changes to Go, which decides what counts
+// as a tap of the configured modifier.
 static CGEventRef cmdcmdTapCallback(CGEventTapProxy proxy, CGEventType type, CGEventRef event, void *info) {
 	if (type == kCGEventTapDisabledByTimeout || type == kCGEventTapDisabledByUserInput) {
 		CGEventTapEnable(cmdcmdTap, true);
-		return event;
+	} else if (type == kCGEventKeyDown) {
+		goKeyDown();
+	} else if (type == kCGEventFlagsChanged) {
+		goFlagsChanged((int)CGEventGetIntegerValueField(event, kCGKeyboardEventKeycode),
+			(unsigned long long)CGEventGetFlags(event));
 	}
-	if (type == kCGEventKeyDown) {
-		goKeyEvent(kindOther);
-		return event;
-	}
-	if (type != kCGEventFlagsChanged) {
-		return event;
-	}
-
-	CGEventFlags flags = CGEventGetFlags(event);
-	int64_t keycode = CGEventGetIntegerValueField(event, kCGKeyboardEventKeycode);
-	bool isCmdKey = keycode == 54 || keycode == 55; // right / left Command
-	bool cmd = (flags & kCGEventFlagMaskCommand) != 0;
-	CGEventFlags others = flags & (kCGEventFlagMaskShift | kCGEventFlagMaskControl |
-		kCGEventFlagMaskAlternate | kCGEventFlagMaskSecondaryFn | kCGEventFlagMaskAlphaShift);
-
-	if (!isCmdKey || others) {
-		goKeyEvent(kindOther);
-	} else if (cmd && !cmdcmdCmdDown) {
-		goKeyEvent(kindCmdDown);
-	} else if (!cmd && cmdcmdCmdDown) {
-		goKeyEvent(kindCmdUp);
-	}
-	cmdcmdCmdDown = cmd;
 	return event;
 }
 

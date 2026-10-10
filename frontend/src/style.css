@@ -18,9 +18,11 @@
     --accent-text: #fff;
     --danger: #ff6961;
     --ok: #32d74b;
-    --shadow: 0 24px 60px -16px rgba(0, 0, 0, 0.6), 0 2px 8px rgba(0, 0, 0, 0.25);
+    /* Reaches about 28px sideways and 44px down; the stage margin must be
+       larger or the shadow is cut off at the window edge. */
+    --shadow: 0 16px 40px -12px rgba(0, 0, 0, 0.55), 0 2px 8px rgba(0, 0, 0, 0.22);
     --ease: cubic-bezier(0.32, 0.72, 0, 1);
-    --chat-height: calc(100vh - 250px);
+    --chat-height: calc(100vh - 340px);
     --gap: 10px;   /* between the window card and the tray */
     --inset: 10px; /* padding inside the window card, around the composer */
 }
@@ -41,7 +43,7 @@
         --accent: #007aff;
         --danger: #ff3b30;
         --ok: #28a745;
-        --shadow: 0 24px 60px -16px rgba(0, 0, 0, 0.28), 0 2px 8px rgba(0, 0, 0, 0.08);
+        --shadow: 0 16px 40px -12px rgba(0, 0, 0, 0.22), 0 2px 8px rgba(0, 0, 0, 0.07);
     }
 }
 
@@ -89,12 +91,14 @@ svg {
 
 /* ---------- stage ---------- */
 
+/* 60px side margins: the cards are 760px wide in an 880px window, leaving
+   room for their shadows. */
 #stage {
     height: 100%;
     display: flex;
     align-items: center;
     justify-content: center;
-    padding: 28px 30px;
+    padding: 0 60px;
 }
 
 #panel {

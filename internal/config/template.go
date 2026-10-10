@@ -24,6 +24,15 @@ var fileTemplate = template.Must(template.New("config").Funcs(template.FuncMap{
   // picked up from here. "~" is your home folder.
   "cwd": {{json .Cwd}},
 
+  // Shortcut that shows and hides cmdcmd. "mod" is ⌘ on macOS, Ctrl on Windows.
+  //   Double-tap a modifier:  "mod mod" (default), "shift shift", "alt alt",
+  //                           "ctrl ctrl", "cmd cmd" (Windows key on Windows)
+  //   Key combination:        "mod+space", "ctrl+alt+k", "mod+shift+g"
+  // Modifiers: mod, cmd, ctrl, alt (option), shift. Keys: a-z, 0-9, space,
+  // return, tab, escape, f1-f12. Double taps need Input Monitoring on macOS;
+  // combinations don't.
+  "hotkey": {{json .Hotkey}},
+
   // Which agent answers your messages. Also set from the Agent picker.
   //   "claude"  Claude Code (claude CLI)
   //   "codex"   OpenAI Codex (codex CLI)

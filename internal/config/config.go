@@ -3,6 +3,7 @@
 package config
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -21,6 +22,9 @@ type Config struct {
 	// Cwd is the directory agents run in; project skills and CLAUDE.md are
 	// picked up from here. "~" is expanded.
 	Cwd string `json:"cwd"`
+
+	// Hotkey shows and hides cmdcmd; see hotkey.Parse for the syntax.
+	Hotkey string `json:"hotkey"`
 
 	// Agent is the selected agent: "claude", "codex" or "custom". Model and
 	// Effort are its selected model and effort level ("" means its default).
@@ -82,6 +86,7 @@ func Shell(commandLine string) (string, []string) {
 func defaults() Config {
 	return Config{
 		Cwd:            "~",
+		Hotkey:         "mod mod",
 		Agent:          "claude",
 		PermissionMode: "auto",
 		CodexSandbox:   "workspace-write",
@@ -116,6 +121,11 @@ func Load() (Config, error) {
 	}
 	if err := json.Unmarshal(stripJSONC(data), &cfg); err != nil {
 		return defaults(), fmt.Errorf("%s: %w", path, err)
+	}
+	// Rewrite the file if the documented template changed, so options added
+	// in newer versions show up with their docs.
+	if !bytes.Equal(data, render(cfg)) {
+		return cfg, cfg.Save()
 	}
 	return cfg, nil
 }
