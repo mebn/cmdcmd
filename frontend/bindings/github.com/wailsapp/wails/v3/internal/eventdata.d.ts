@@ -16,6 +16,7 @@ declare module "@wailsio/runtime" {
             "claude": session$0.Event;
             "notice": string;
             "session:new": void;
+            "session:resumed": session$0.HistoryItem[] | null;
             "window:shown": void;
         }
     }

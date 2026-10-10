@@ -24,6 +24,16 @@ import * as $models from "./models.js";
  */
 
 /**
+ * HistoryItem is one entry of a past conversation, for showing it again.
+ * @typedef {$models.HistoryItem} HistoryItem
+ */
+
+/**
  * Model is a model an agent can run, with the effort levels it supports.
  * @typedef {$models.Model} Model
+ */
+
+/**
+ * SessionInfo is a past conversation that can be resumed.
+ * @typedef {$models.SessionInfo} SessionInfo
  */

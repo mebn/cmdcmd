@@ -30,7 +30,7 @@ type Claude struct {
 
 // NewClaude creates a session; no process is started until Start or Send.
 func NewClaude(opts Options, onEvent func(Event)) *Claude {
-	return &Claude{opts: opts, onEvent: onEvent}
+	return &Claude{opts: opts, onEvent: onEvent, sessionID: opts.ResumeID}
 }
 
 // ID returns the Claude Code session ID once known.
@@ -255,6 +255,7 @@ type streamMessage struct {
 
 type contentBlock struct {
 	Type    string          `json:"type"`
+	Text    string          `json:"text"`
 	Name    string          `json:"name"`
 	Input   json.RawMessage `json:"input"`
 	IsError bool            `json:"is_error"`

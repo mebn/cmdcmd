@@ -8,27 +8,33 @@
 <body>
 <div id="stage">
     <div id="panel">
-        <section id="chat" class="surface">
-            <div id="notice" hidden>
-                <span id="notice-text"></span>
-                <button id="notice-settings" type="button" hidden>Open Settings</button>
+        <section id="window">
+            <div id="chat">
+                <div id="notice" hidden>
+                    <span id="notice-text"></span>
+                    <button id="notice-settings" type="button" hidden>Open Settings</button>
+                </div>
+                <div id="history"></div>
+                <div id="menu" role="listbox" hidden></div>
             </div>
-            <div id="history"></div>
-            <div id="menu" role="listbox" hidden></div>
-        </section>
 
-        <div id="dock">
-            <form id="composer" class="surface" autocomplete="off">
+            <form id="composer" autocomplete="off">
                 <textarea id="input" rows="1" placeholder="Ask AI, or type / for commands" spellcheck="false" autofocus></textarea>
                 <button id="send" class="send-button" type="submit" title="Send (Enter)" aria-label="Send" disabled>
                     <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 19V5M6 11l6-6 6 6"/></svg>
                 </button>
             </form>
+        </section>
 
+        <div id="dock">
             <div id="tray">
                 <button id="new" class="chip" type="button" title="New session (⌘N)">
                     <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg>
-                    New session
+                    New
+                </button>
+                <button id="session-button" class="chip picker" type="button" title="Resume a past session" aria-haspopup="listbox" aria-expanded="false">
+                    <span class="label">Sessions</span>
+                    <svg class="chevron" viewBox="0 0 24 24" aria-hidden="true"><path d="M7 10l5 5 5-5"/></svg>
                 </button>
                 <span class="spacer"></span>
                 <button id="agent-button" class="chip picker" type="button" title="Agent" aria-haspopup="listbox" aria-expanded="false">

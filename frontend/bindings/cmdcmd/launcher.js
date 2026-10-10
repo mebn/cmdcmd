@@ -52,6 +52,14 @@ export function GetSelection() {
 }
 
 /**
+ * GetSessions lists the current agent's recent sessions, newest first.
+ * @returns {$CancellablePromise<$models.SessionList>}
+ */
+export function GetSessions() {
+    return $Call.ByID(2674453913);
+}
+
+/**
  * Hide hides the window. The agent keeps running.
  * @returns {$CancellablePromise<void>}
  */
@@ -82,6 +90,16 @@ export function OpenPermissionSettings() {
  */
 export function Quit() {
     return $Call.ByID(2290958839);
+}
+
+/**
+ * ResumeSession switches to a past session of the current agent and sends
+ * its messages to the UI as a "session:resumed" event.
+ * @param {string} id
+ * @returns {$CancellablePromise<void>}
+ */
+export function ResumeSession(id) {
+    return $Call.ByID(2930477269, id);
 }
 
 /**

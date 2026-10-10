@@ -26,6 +26,7 @@ func init() {
 	application.RegisterEvent[application.Void]("session:new")
 	application.RegisterEvent[string]("notice")
 	application.RegisterEvent[application.Void]("agents:changed")
+	application.RegisterEvent[[]session.HistoryItem]("session:resumed")
 }
 
 func main() {

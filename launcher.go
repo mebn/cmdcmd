@@ -30,6 +30,7 @@ type Launcher struct {
 	mu           sync.Mutex
 	cfg          config.Config
 	agent        session.Agent
+	sessionID    string // the current conversation's ID, once known
 	commands     []session.Command
 	claudeModels []session.Model
 }
@@ -90,12 +91,19 @@ func (l *Launcher) shutdown() {
 // newAgent creates the agent selected in the config. Callers must hold l.mu
 // (or be the constructor).
 func (l *Launcher) newAgent() session.Agent {
+	return l.newAgentResuming("")
+}
+
+// newAgentResuming creates the selected agent, continuing the session with
+// the given ID if it is not empty. Callers must hold l.mu.
+func (l *Launcher) newAgentResuming(resumeID string) session.Agent {
 	cfg := l.cfg
 	opts := session.Options{
-		Cwd:    cfg.ResolvedCwd(),
-		Env:    l.env,
-		Model:  cfg.Model,
-		Effort: cfg.Effort,
+		Cwd:      cfg.ResolvedCwd(),
+		Env:      l.env,
+		Model:    cfg.Model,
+		Effort:   cfg.Effort,
+		ResumeID: resumeID,
 	}
 	var a session.Agent
 	onEvent := func(ev session.Event) { l.onAgentEvent(a, ev) }
@@ -119,6 +127,9 @@ func (l *Launcher) onAgentEvent(a session.Agent, ev session.Event) {
 	// Drop events from an agent that was replaced.
 	l.mu.Lock()
 	current := l.agent == a
+	if current && ev.Type == "init" {
+		l.sessionID = ev.SessionID
+	}
 	if current && ev.Type == "commands" {
 		l.commands = ev.Commands
 		if len(ev.Models) > 0 {
@@ -321,12 +332,64 @@ func (l *Launcher) NewSession() {
 	l.mu.Lock()
 	l.agent.Close()
 	l.agent = l.newAgent()
+	l.sessionID = ""
 	l.commands = nil
 	l.mu.Unlock()
 	if l.app != nil {
 		l.app.Event.Emit("session:new")
 		l.startAgent()
 	}
+}
+
+// ---------- past sessions ----------
+
+// SessionList is the current agent's recent sessions and which one is open.
+type SessionList struct {
+	Current  string                `json:"current"`
+	Sessions []session.SessionInfo `json:"sessions"`
+}
+
+// GetSessions lists the current agent's recent sessions, newest first.
+func (l *Launcher) GetSessions() SessionList {
+	l.mu.Lock()
+	agent, cwd, current := l.cfg.Agent, l.cfg.ResolvedCwd(), l.sessionID
+	l.mu.Unlock()
+	list := SessionList{Current: current, Sessions: []session.SessionInfo{}}
+	switch agent {
+	case "claude":
+		list.Sessions = append(list.Sessions, session.ClaudeSessions(cwd)...)
+	case "codex":
+		list.Sessions = append(list.Sessions, session.CodexSessions()...)
+	}
+	return list
+}
+
+// ResumeSession switches to a past session of the current agent and sends
+// its messages to the UI as a "session:resumed" event.
+func (l *Launcher) ResumeSession(id string) {
+	l.mu.Lock()
+	agent, cwd := l.cfg.Agent, l.cfg.ResolvedCwd()
+	if id == l.sessionID || agent == "custom" {
+		l.mu.Unlock()
+		return
+	}
+	l.agent.Close()
+	l.agent = l.newAgentResuming(id)
+	l.sessionID = id
+	l.commands = nil
+	l.mu.Unlock()
+
+	var history []session.HistoryItem
+	if agent == "claude" {
+		history = session.ClaudeHistory(cwd, id)
+	} else {
+		history = session.CodexHistory(id)
+	}
+	if history == nil {
+		history = []session.HistoryItem{}
+	}
+	l.app.Event.Emit("session:resumed", history)
+	l.startAgent()
 }
 
 // ---------- window ----------

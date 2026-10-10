@@ -33,12 +33,28 @@
  */
 
 /**
+ * HistoryItem is one entry of a past conversation, for showing it again.
+ * @typedef {Object} HistoryItem
+ * @property {string} role - "user", "assistant" or "tool"
+ * @property {string} text
+ * @property {string} [tool]
+ */
+
+/**
  * Model is a model an agent can run, with the effort levels it supports.
  * @typedef {Object} Model
  * @property {string} value
  * @property {string} label
  * @property {string} [description]
  * @property {string[] | null} [efforts]
+ */
+
+/**
+ * SessionInfo is a past conversation that can be resumed.
+ * @typedef {Object} SessionInfo
+ * @property {string} id
+ * @property {string} title
+ * @property {string} updated
  */
 
 // In interface mode, this file is likely to contain just comments.

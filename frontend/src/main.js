@@ -50,6 +50,22 @@ function addText(className, text) {
     return add(className, el => { el.textContent = text; });
 }
 
+function addMarkdown(text) {
+    return add('assistant', el => { el.innerHTML = DOMPurify.sanitize(marked.parse(text)); });
+}
+
+function addTool(tool, text) {
+    return add('tool', el => {
+        const name = document.createElement('span');
+        name.className = 'name';
+        name.textContent = tool;
+        const detail = document.createElement('span');
+        detail.className = 'detail';
+        detail.textContent = text ?? '';
+        el.append(name, detail);
+    });
+}
+
 function setThinking(on) {
     if (on && !thinking) {
         thinking = document.createElement('div');
@@ -113,15 +129,7 @@ Events.On('claude', ({data: ev}) => {
             break;
         case 'tool':
             current = null;
-            add('tool', el => {
-                const name = document.createElement('span');
-                name.className = 'name';
-                name.textContent = ev.tool;
-                const detail = document.createElement('span');
-                detail.className = 'detail';
-                detail.textContent = ev.text ?? '';
-                el.append(name, detail);
-            });
+            addTool(ev.tool, ev.text);
             setThinking(true);
             break;
         case 'tool_error': {
@@ -354,6 +362,7 @@ document.addEventListener('keydown', e => {
 const pickerPop = document.getElementById('picker-pop');
 const popList = document.getElementById('pop-list');
 const pickerButtons = {
+    session: document.getElementById('session-button'),
     agent: document.getElementById('agent-button'),
     model: document.getElementById('model-button'),
     effort: document.getElementById('effort-button'),
@@ -363,6 +372,7 @@ const effortNames = {minimal: 'Minimal', low: 'Low', medium: 'Medium', high: 'Hi
 let agents = [];
 let selection = {agent: 'claude', model: '', effort: ''};
 let openKind = null; // which dropdown the popover belongs to
+let sessions = {current: '', sessions: []};
 
 function currentAgent() {
     return agents.find(a => a.id === selection.agent);
@@ -376,6 +386,21 @@ function currentModel() {
 // options returns the rows for one dropdown: {label, description, active,
 // disabled, pick}.
 function options(kind) {
+    if (kind === 'session') {
+        if (sessions.sessions.length === 0) {
+            return [{label: 'No past sessions', description: 'Sessions you start appear here.', disabled: true}];
+        }
+        return sessions.sessions.map(s => ({
+            label: s.title,
+            description: timeAgo(s.updated),
+            active: s.id === sessions.current,
+            pick: async () => {
+                await Launcher.ResumeSession(s.id);
+                await loadSessions();
+                renderList();
+            },
+        }));
+    }
     if (kind === 'agent') {
         return agents.map(a => ({
             label: a.name,
@@ -415,6 +440,7 @@ function renderPicker() {
     pickerButtons.model.querySelector('.label').textContent = model ? model.label.replace(/\s*\(.*\)$/, '') : '';
     pickerButtons.effort.querySelector('.label').textContent =
         selection.effort ? (effortNames[selection.effort] ?? selection.effort) : 'Auto effort';
+    pickerButtons.session.hidden = selection.agent === 'custom';
     pickerButtons.model.hidden = (agent?.models ?? []).length === 0;
     pickerButtons.effort.hidden = efforts.length === 0;
 
@@ -463,6 +489,19 @@ async function choose(next) {
     }
 }
 
+async function loadSessions() {
+    sessions = await Launcher.GetSessions();
+}
+
+function timeAgo(iso) {
+    const s = (Date.now() - new Date(iso).getTime()) / 1000;
+    if (s < 60) return 'just now';
+    if (s < 3600) return `${Math.floor(s / 60)} min ago`;
+    if (s < 86400) return `${Math.floor(s / 3600)} h ago`;
+    if (s < 7 * 86400) return `${Math.floor(s / 86400)} d ago`;
+    return new Date(iso).toLocaleDateString();
+}
+
 async function loadAgents() {
     [agents, selection] = await Promise.all([Launcher.GetAgents(), Launcher.GetSelection()]);
     renderPicker();
@@ -493,6 +532,7 @@ async function openPicker(kind) {
     pickerPop.dataset.kind = kind;
     pickerPop.classList.remove('closing');
     pickerButtons[kind].setAttribute('aria-expanded', 'true');
+    if (kind === 'session') await loadSessions();
     renderList();
     pickerPop.hidden = false;
     positionPicker();
@@ -555,7 +595,10 @@ stage.addEventListener('mousedown', e => {
         closePicker();
         return;
     }
-    if (e.target === stage || e.target === document.getElementById('panel')) {
+    // The window card's padding is invisible while collapsed, so it counts as
+    // outside too.
+    const collapsedPadding = e.target.id === 'window' && !stage.classList.contains('expanded');
+    if (e.target === stage || e.target.id === 'panel' || collapsedPadding) {
         Launcher.Hide();
     }
 });
@@ -568,6 +611,18 @@ Events.On('window:shown', () => {
 });
 
 Events.On('session:new', clearHistory);
+
+// A resumed session replaces the chat with its earlier messages.
+Events.On('session:resumed', ({data: items}) => {
+    clearHistory();
+    for (const it of items ?? []) {
+        if (it.role === 'user') addText('user', it.text);
+        else if (it.role === 'assistant') addMarkdown(it.text);
+        else addTool(it.tool, it.text);
+    }
+    if (!items?.length) addText('system', 'Resumed an earlier session.');
+    history.scrollTop = history.scrollHeight;
+});
 
 function showNotice(text) {
     document.getElementById('notice-text').textContent = text;

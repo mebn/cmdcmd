@@ -48,6 +48,10 @@ type Options struct {
 	Model  string
 	Effort string
 
+	// ResumeID continues an existing session (Claude) or thread (Codex)
+	// instead of starting a new one.
+	ResumeID string
+
 	PermissionMode string // claude --permission-mode
 	Sandbox        string // codex sandbox_mode
 }

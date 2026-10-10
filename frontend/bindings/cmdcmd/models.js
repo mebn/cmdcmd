@@ -34,6 +34,13 @@ import * as session$0 from "./internal/session/models.js";
  * @property {string} effort
  */
 
+/**
+ * SessionList is the current agent's recent sessions and which one is open.
+ * @typedef {Object} SessionList
+ * @property {string} current
+ * @property {session$0.SessionInfo[] | null} sessions
+ */
+
 // In interface mode, this file is likely to contain just comments.
 // We add a dummy export statement to ensure it is recognised as an ES module.
 export {};

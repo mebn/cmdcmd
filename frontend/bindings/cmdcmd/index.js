@@ -23,3 +23,8 @@ import * as $models from "./models.js";
  * Selection is the chosen agent, model and effort ("" = default).
  * @typedef {$models.Selection} Selection
  */
+
+/**
+ * SessionList is the current agent's recent sessions and which one is open.
+ * @typedef {$models.SessionList} SessionList
+ */

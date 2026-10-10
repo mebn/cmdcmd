@@ -24,7 +24,7 @@ type Codex struct {
 
 // NewCodex creates a Codex conversation.
 func NewCodex(opts Options, onEvent func(Event)) *Codex {
-	c := &Codex{opts: opts, onEvent: onEvent}
+	c := &Codex{opts: opts, onEvent: onEvent, threadID: opts.ResumeID}
 	c.turns.run = c.turn
 	return c
 }
