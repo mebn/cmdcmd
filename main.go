@@ -7,7 +7,6 @@ import (
 	"runtime"
 
 	"cmdcmd/internal/config"
-	"cmdcmd/internal/session"
 
 	"github.com/wailsapp/wails/v3/pkg/application"
 	"github.com/wailsapp/wails/v3/pkg/events"
@@ -20,12 +19,12 @@ var assets embed.FS
 var trayIcon []byte
 
 func init() {
-	application.RegisterEvent[session.Event]("claude")
+	application.RegisterEvent[AgentEvent]("claude")
 	application.RegisterEvent[application.Void]("window:shown")
-	application.RegisterEvent[application.Void]("session:new")
+	application.RegisterEvent[OpenedSession]("session:open")
+	application.RegisterEvent[application.Void]("sessions:changed")
 	application.RegisterEvent[string]("notice")
 	application.RegisterEvent[application.Void]("agents:changed")
-	application.RegisterEvent[[]session.HistoryItem]("session:resumed")
 }
 
 func main() {

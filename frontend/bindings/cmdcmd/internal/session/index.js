@@ -10,20 +10,6 @@ import * as $models from "./models.js";
  */
 
 /**
- * Event is what the UI receives. Type is one of:
- * 
- * 	init        session started; SessionID is set
- * 	commands    the available slash commands (Commands)
- * 	block       a new assistant text block starts
- * 	text        streamed assistant text (Text)
- * 	tool        the agent ran a tool (Tool, Text = short summary)
- * 	tool_error  the last tool call failed (Text)
- * 	done        the turn finished (IsError, Text on error, Cost)
- * 	exit        the agent process exited unexpectedly (Text = reason)
- * @typedef {$models.Event} Event
- */
-
-/**
  * HistoryItem is one entry of a past conversation, for showing it again.
  * @typedef {$models.HistoryItem} HistoryItem
  */
@@ -31,9 +17,4 @@ import * as $models from "./models.js";
 /**
  * Model is a model an agent can run, with the effort levels it supports.
  * @typedef {$models.Model} Model
- */
-
-/**
- * SessionInfo is a past conversation that can be resumed.
- * @typedef {$models.SessionInfo} SessionInfo
  */

@@ -7,55 +7,93 @@ import {Launcher} from '../bindings/cmdcmd';
 
 const stage = document.getElementById('stage');
 const chat = document.getElementById('chat');
-const history = document.getElementById('history');
 const menu = document.getElementById('menu');
+const composer = document.getElementById('composer');
 const input = document.getElementById('input');
 const sendButton = document.getElementById('send');
 const notice = document.getElementById('notice');
 
-let current = null;   // assistant message being streamed into: {el, text}
-let thinking = null;  // "Thinking…" placeholder element
-let pending = 0;      // turns sent but not finished
 let commands = [];    // slash commands from Claude Code
 let menuItems = [];   // commands currently shown in the menu
 let selected = 0;     // index into menuItems
+
+// ---------- views ----------
+
+// Every live session has its own history pane, so one running in the
+// background keeps streaming into it while another is on screen. A view is
+// {key, el, current, thinking, pending}: current is the assistant message
+// being streamed into ({el, text}), thinking the "Thinking…" placeholder and
+// pending the number of turns sent but not finished.
+const views = new Map();
+let view = null; // the session on screen
+
+function getView(key) {
+    let v = views.get(key);
+    if (!v) {
+        const el = document.createElement('div');
+        el.className = 'history';
+        chat.insertBefore(el, menu);
+        v = {key, el, current: null, thinking: null, pending: 0, renderQueued: false};
+        views.set(key, v);
+    }
+    return v;
+}
+
+function showView(key) {
+    view?.el.classList.remove('active');
+    view = getView(key);
+    view.el.classList.add('active');
+    view.el.scrollTop = view.el.scrollHeight;
+    sendButton.classList.toggle('busy', view.pending > 0);
+    updateLayout();
+}
+
+// dropViews forgets the panes of sessions that are no longer live.
+function dropViews(liveKeys) {
+    for (const [key, v] of views) {
+        if (v !== view && !liveKeys.has(key)) {
+            v.el.remove();
+            views.delete(key);
+        }
+    }
+}
 
 // ---------- layout ----------
 
 // The chat card grows out of the input once there is something to show:
 // history, the slash command menu, or a notice. CSS animates it.
 function updateLayout() {
-    const expanded = history.childElementCount > 0 || !menu.hidden || !notice.hidden;
+    const expanded = (view?.el.childElementCount ?? 0) > 0 || !menu.hidden || !notice.hidden;
     stage.classList.toggle('expanded', expanded);
 }
 
 // ---------- history ----------
 
-function nearBottom() {
-    return history.scrollHeight - history.scrollTop - history.clientHeight < 48;
+function nearBottom(v) {
+    return v.el.scrollHeight - v.el.scrollTop - v.el.clientHeight < 48;
 }
 
-function add(className, build) {
-    const stick = nearBottom();
+function add(v, className, build) {
+    const stick = nearBottom(v);
     const el = document.createElement('div');
     el.className = 'msg ' + className;
     build?.(el);
-    history.insertBefore(el, thinking);
-    if (stick) history.scrollTop = history.scrollHeight;
-    updateLayout();
+    v.el.insertBefore(el, v.thinking);
+    if (stick) v.el.scrollTop = v.el.scrollHeight;
+    if (v === view) updateLayout();
     return el;
 }
 
-function addText(className, text) {
-    return add(className, el => { el.textContent = text; });
+function addText(v, className, text) {
+    return add(v, className, el => { el.textContent = text; });
 }
 
-function addMarkdown(text) {
-    return add('assistant', el => { el.innerHTML = DOMPurify.sanitize(marked.parse(text)); });
+function addMarkdown(v, text) {
+    return add(v, 'assistant', el => { el.innerHTML = DOMPurify.sanitize(marked.parse(text)); });
 }
 
-function addTool(tool, text) {
-    return add('tool', el => {
+function addTool(v, tool, text) {
+    return add(v, 'tool', el => {
         const name = document.createElement('span');
         name.className = 'name';
         name.textContent = tool;
@@ -66,86 +104,78 @@ function addTool(tool, text) {
     });
 }
 
-function setThinking(on) {
-    if (on && !thinking) {
-        thinking = document.createElement('div');
-        thinking.className = 'thinking';
-        thinking.textContent = 'Thinking…';
-        history.appendChild(thinking);
-        history.scrollTop = history.scrollHeight;
-    } else if (!on && thinking) {
-        thinking.remove();
-        thinking = null;
+function setThinking(v, on) {
+    if (on && !v.thinking) {
+        v.thinking = document.createElement('div');
+        v.thinking.className = 'thinking';
+        v.thinking.textContent = 'Thinking…';
+        v.el.appendChild(v.thinking);
+        v.el.scrollTop = v.el.scrollHeight;
+    } else if (!on && v.thinking) {
+        v.thinking.remove();
+        v.thinking = null;
     }
 }
 
 // Assistant text streams in token by token; re-render its markdown at most
 // once per frame. Output is sanitized because the page can call Go methods.
-let renderQueued = false;
-function renderCurrent() {
-    if (!current || renderQueued) return;
-    renderQueued = true;
+function renderCurrent(v) {
+    if (!v.current || v.renderQueued) return;
+    v.renderQueued = true;
     requestAnimationFrame(() => {
-        renderQueued = false;
-        if (!current) return;
-        const stick = nearBottom();
-        current.el.innerHTML = DOMPurify.sanitize(marked.parse(current.text));
-        if (stick) history.scrollTop = history.scrollHeight;
+        v.renderQueued = false;
+        if (!v.current) return;
+        const stick = nearBottom(v);
+        v.current.el.innerHTML = DOMPurify.sanitize(marked.parse(v.current.text));
+        if (stick) v.el.scrollTop = v.el.scrollHeight;
     });
 }
 
 // setBusy adjusts the count of turns in flight; null resets it.
-function setBusy(delta) {
-    pending = delta === null ? 0 : Math.max(0, pending + delta);
-    sendButton.classList.toggle('busy', pending > 0);
-    setThinking(pending > 0 && !current);
-}
-
-function clearHistory() {
-    current = null;
-    thinking = null;
-    history.replaceChildren();
-    setBusy(null);
-    updateLayout();
-    input.focus();
+function setBusy(v, delta) {
+    v.pending = delta === null ? 0 : Math.max(0, v.pending + delta);
+    if (v === view) sendButton.classList.toggle('busy', v.pending > 0);
+    setThinking(v, v.pending > 0 && !v.current);
 }
 
 Events.On('claude', ({data: ev}) => {
+    const v = getView(ev.session);
     switch (ev.type) {
         case 'commands':
+            if (v !== view) break;
             commands = ev.commands ?? [];
             if (!menu.hidden) updateMenu();
             break;
         case 'block':
-            current = null;
+            v.current = null;
             break;
         case 'text':
-            if (!current) {
-                setThinking(false);
-                current = {el: add('assistant'), text: ''};
+            if (!v.current) {
+                setThinking(v, false);
+                v.current = {el: add(v, 'assistant'), text: ''};
             }
-            current.text += ev.text;
-            renderCurrent();
+            v.current.text += ev.text;
+            renderCurrent(v);
             break;
         case 'tool':
-            current = null;
-            addTool(ev.tool, ev.text);
-            setThinking(true);
+            v.current = null;
+            addTool(v, ev.tool, ev.text);
+            setThinking(v, true);
             break;
         case 'tool_error': {
-            const tools = history.querySelectorAll('.msg.tool');
+            const tools = v.el.querySelectorAll('.msg.tool');
             tools[tools.length - 1]?.classList.add('failed');
             break;
         }
         case 'done':
-            current = null;
-            if (ev.isError) addText('system error', ev.text || 'Something went wrong.');
-            setBusy(-1);
+            v.current = null;
+            if (ev.isError) addText(v, 'system error', ev.text || 'Something went wrong.');
+            setBusy(v, -1);
             break;
         case 'exit':
-            current = null;
-            setBusy(null);
-            addText('system error', 'Claude stopped' + (ev.text ? ': ' + ev.text : '.') + ' Your next message starts it again.');
+            v.current = null;
+            setBusy(v, null);
+            addText(v, 'system error', 'Claude stopped' + (ev.text ? ': ' + ev.text : '.') + ' Your next message starts it again.');
             break;
     }
 });
@@ -154,22 +184,49 @@ Events.On('claude', ({data: ev}) => {
 
 async function send() {
     const text = input.value.trim();
-    if (!text) return;
+    if (!text || !view) return;
     setInput('');
     if (text === '/clear') {
         Launcher.NewSession();
         return;
     }
-    current = null;
-    addText('user', text);
-    history.scrollTop = history.scrollHeight;
-    setBusy(+1);
+    if (text.startsWith('!')) {
+        runShell(text.slice(1).trim());
+        return;
+    }
+    const v = view;
+    v.current = null;
+    addText(v, 'user', text);
+    v.el.scrollTop = v.el.scrollHeight;
+    setBusy(v, +1);
     try {
         await Launcher.Send(text);
     } catch (err) {
-        setBusy(-1);
-        addText('system error', String(err));
+        setBusy(v, -1);
+        addText(v, 'system error', String(err));
     }
+}
+
+// runShell runs a ! command and shows its output. The agent sees both with
+// the next message.
+async function runShell(command) {
+    if (!command) return;
+    const v = view;
+    v.current = null;
+    addText(v, 'user bash', '! ' + command);
+    const out = addText(v, 'shell running', 'Running…');
+    v.el.scrollTop = v.el.scrollHeight;
+    let res;
+    try {
+        res = await Launcher.RunShell(command);
+    } catch (err) {
+        res = {output: '', error: String(err)};
+    }
+    const stick = nearBottom(v);
+    out.classList.remove('running');
+    out.classList.toggle('failed', !!res.error);
+    out.textContent = [res.output, res.error].filter(Boolean).join('\n') || '(no output)';
+    if (stick) v.el.scrollTop = v.el.scrollHeight;
 }
 
 function setInput(value) {
@@ -181,6 +238,7 @@ function onInput() {
     input.style.height = 'auto';
     input.style.height = input.scrollHeight + 'px';
     sendButton.disabled = input.value.trim() === '';
+    composer.classList.toggle('bash', input.value.startsWith('!'));
     updateMenu();
     updateLayout();
 }
@@ -309,7 +367,7 @@ document.addEventListener('keydown', e => {
 
     if (e.key === 'Escape') {
         e.preventDefault();
-        if (openKind) closePicker();
+        if (settingsOpen) closeSettings();
         else if (!menu.hidden) setInput('');
         else Launcher.Hide();
         return;
@@ -335,6 +393,11 @@ document.addEventListener('keydown', e => {
         accept(selected, false);
         return;
     }
+    if (e.key === 'Tab' && !settingsOpen && !e.metaKey && !e.ctrlKey && !e.altKey) {
+        e.preventDefault();
+        stepSession(e.shiftKey ? -1 : 1);
+        return;
+    }
     if (e.key === 'Enter' && !e.shiftKey && !e.isComposing && e.target === input) {
         e.preventDefault();
         if (menuOpen) accept(selected, true);
@@ -347,7 +410,7 @@ document.addEventListener('keydown', e => {
     const inField = document.activeElement?.matches('input, textarea');
     if (printable && !inField) {
         e.preventDefault();
-        closePicker();
+        closeSettings();
         input.focus();
         const end = input.value.length;
         input.setRangeText(e.key, end, end, 'end');
@@ -355,24 +418,23 @@ document.addEventListener('keydown', e => {
     }
 });
 
-// ---------- agent / model / effort pickers ----------
+// ---------- settings: agent, model, effort ----------
 
-// Three dropdowns in the tray share one popover. Choosing an option keeps
-// the popover open; it closes on Esc, a click elsewhere, or its button.
-const pickerPop = document.getElementById('picker-pop');
-const popList = document.getElementById('pop-list');
-const pickerButtons = {
-    session: document.getElementById('session-button'),
-    agent: document.getElementById('agent-button'),
-    model: document.getElementById('model-button'),
-    effort: document.getElementById('effort-button'),
+// The gear in the tray opens one popover with the agent, model and effort
+// choices. Choosing an option keeps it open; it closes on Esc, a click
+// elsewhere, or the gear.
+const settingsPop = document.getElementById('settings-pop');
+const settingsButton = document.getElementById('settings-button');
+const settingsLists = {
+    agent: document.getElementById('agent-list'),
+    model: document.getElementById('model-list'),
+    effort: document.getElementById('effort-list'),
 };
 const effortNames = {minimal: 'Minimal', low: 'Low', medium: 'Medium', high: 'High', xhigh: 'Extra high', max: 'Max', ultra: 'Ultra'};
 
 let agents = [];
 let selection = {agent: 'claude', model: '', effort: ''};
-let openKind = null; // which dropdown the popover belongs to
-let sessions = {current: '', sessions: []};
+let settingsOpen = false;
 
 function currentAgent() {
     return agents.find(a => a.id === selection.agent);
@@ -383,24 +445,9 @@ function currentModel() {
     return models.find(m => m.value === selection.model) ?? models.find(m => m.value === 'default') ?? models[0];
 }
 
-// options returns the rows for one dropdown: {label, description, active,
+// options returns the rows for one section: {label, description, active,
 // disabled, pick}.
 function options(kind) {
-    if (kind === 'session') {
-        if (sessions.sessions.length === 0) {
-            return [{label: 'No past sessions', description: 'Sessions you start appear here.', disabled: true}];
-        }
-        return sessions.sessions.map(s => ({
-            label: s.title,
-            description: timeAgo(s.updated),
-            active: s.id === sessions.current,
-            pick: async () => {
-                await Launcher.ResumeSession(s.id);
-                await loadSessions();
-                renderList();
-            },
-        }));
-    }
     if (kind === 'agent') {
         return agents.map(a => ({
             label: a.name,
@@ -423,7 +470,9 @@ function options(kind) {
             },
         }));
     }
-    return ['', ...(currentModel()?.efforts ?? [])].map(level => ({
+    const efforts = currentModel()?.efforts ?? [];
+    if (efforts.length === 0) return [];
+    return ['', ...efforts].map(level => ({
         label: level ? (effortNames[level] ?? level) : 'Auto',
         description: level ? '' : "The model's default",
         active: level === selection.effort,
@@ -431,66 +480,58 @@ function options(kind) {
     }));
 }
 
-function renderPicker() {
-    const agent = currentAgent();
+// renderSettings updates the gear's tooltip and, while open, the popover.
+function renderSettings() {
     const model = currentModel();
-    const efforts = model?.efforts ?? [];
+    settingsButton.title = [
+        currentAgent()?.name ?? 'Claude',
+        model?.label.replace(/\s*\(.*\)$/, ''),
+        selection.effort ? (effortNames[selection.effort] ?? selection.effort) + ' effort' : '',
+    ].filter(Boolean).join(' · ');
+    if (!settingsOpen) return;
 
-    pickerButtons.agent.querySelector('.label').textContent = agent?.name ?? 'Claude';
-    pickerButtons.model.querySelector('.label').textContent = model ? model.label.replace(/\s*\(.*\)$/, '') : '';
-    pickerButtons.effort.querySelector('.label').textContent =
-        selection.effort ? (effortNames[selection.effort] ?? selection.effort) : 'Auto effort';
-    pickerButtons.session.hidden = selection.agent === 'custom';
-    pickerButtons.model.hidden = (agent?.models ?? []).length === 0;
-    pickerButtons.effort.hidden = efforts.length === 0;
-
-    if (openKind && pickerButtons[openKind].hidden) closePicker();
-    if (openKind) renderList();
+    const custom = agents.find(a => a.id === 'custom');
+    if (document.activeElement !== customInput) customInput.value = custom?.command ?? '';
+    for (const [kind, list] of Object.entries(settingsLists)) {
+        const rows = options(kind);
+        list.parentElement.hidden = rows.length === 0;
+        list.replaceChildren(...rows.map(optionButton));
+    }
 }
 
-function renderList() {
-    const custom = agents.find(a => a.id === 'custom');
-    customCmd.hidden = openKind !== 'agent';
-    if (document.activeElement !== customInput) customInput.value = custom?.command ?? '';
-
-    popList.replaceChildren(...options(openKind).map(o => {
-        const b = document.createElement('button');
-        b.type = 'button';
-        b.className = 'option' + (o.active ? ' active' : '');
-        b.disabled = !!o.disabled;
-        const name = document.createElement('span');
-        name.className = 'option-name';
-        name.textContent = o.label;
-        const check = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
-        check.setAttribute('viewBox', '0 0 24 24');
-        check.classList.add('check');
-        check.innerHTML = '<path d="M5 12.5l4.5 4.5L19 7.5"/>';
-        b.append(name, check);
-        if (o.description) {
-            const desc = document.createElement('span');
-            desc.className = 'option-desc';
-            desc.textContent = o.description;
-            b.appendChild(desc);
-        }
-        b.addEventListener('click', o.pick);
-        return b;
-    }));
+function optionButton(o) {
+    const b = document.createElement('button');
+    b.type = 'button';
+    b.className = 'option' + (o.active ? ' active' : '');
+    b.disabled = !!o.disabled;
+    const name = document.createElement('span');
+    name.className = 'option-name';
+    name.textContent = o.label;
+    const check = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+    check.setAttribute('viewBox', '0 0 24 24');
+    check.classList.add('check');
+    check.innerHTML = '<path d="M5 12.5l4.5 4.5L19 7.5"/>';
+    b.append(name, check);
+    if (o.description) {
+        const desc = document.createElement('span');
+        desc.className = 'option-desc';
+        desc.textContent = o.description;
+        b.appendChild(desc);
+    }
+    b.addEventListener('click', o.pick);
+    return b;
 }
 
 async function choose(next) {
     const agentChanged = next.agent !== selection.agent;
     selection = next;
     if (agentChanged) commands = [];
-    renderPicker();
+    renderSettings();
     try {
         await Launcher.SetSelection(next);
     } catch (err) {
-        addText('system error', String(err));
+        if (view) addText(view, 'system error', String(err));
     }
-}
-
-async function loadSessions() {
-    sessions = await Launcher.GetSessions();
 }
 
 function timeAgo(iso) {
@@ -504,59 +545,55 @@ function timeAgo(iso) {
 
 async function loadAgents() {
     [agents, selection] = await Promise.all([Launcher.GetAgents(), Launcher.GetSelection()]);
-    renderPicker();
+    renderSettings();
 }
 
-// Place the popover beside its button, on whichever side (above or below)
-// has more room, and keep it inside the window.
-function positionPicker() {
-    if (!openKind) return;
+// Place the popover beside the gear, on whichever side (above or below) has
+// more room, and keep it inside the window.
+function positionSettings() {
+    if (!settingsOpen) return;
     const gap = 10, edge = 40; // edge leaves room for the popover's shadow
-    const button = pickerButtons[openKind].getBoundingClientRect();
-    const width = pickerPop.offsetWidth;
+    const button = settingsButton.getBoundingClientRect();
+    const width = settingsPop.offsetWidth;
     const above = button.top - gap - edge;
     const below = window.innerHeight - button.bottom - gap - edge;
     const up = above >= below;
 
-    pickerPop.classList.toggle('up', up);
-    pickerPop.classList.toggle('down', !up);
-    pickerPop.style.left = Math.min(Math.max(edge, button.right - width), window.innerWidth - width - edge) + 'px';
-    pickerPop.style.top = up ? 'auto' : button.bottom + gap + 'px';
-    pickerPop.style.bottom = up ? window.innerHeight - button.top + gap + 'px' : 'auto';
-    pickerPop.querySelector('.popover-scroll').style.maxHeight = Math.min(420, up ? above : below) + 'px';
+    settingsPop.classList.toggle('up', up);
+    settingsPop.classList.toggle('down', !up);
+    settingsPop.style.left = Math.min(Math.max(edge, button.right - width), window.innerWidth - width - edge) + 'px';
+    settingsPop.style.top = up ? 'auto' : button.bottom + gap + 'px';
+    settingsPop.style.bottom = up ? window.innerHeight - button.top + gap + 'px' : 'auto';
+    settingsPop.querySelector('.popover-scroll').style.maxHeight = Math.min(520, up ? above : below) + 'px';
 }
 
-async function openPicker(kind) {
-    if (openKind) pickerButtons[openKind].setAttribute('aria-expanded', 'false');
-    openKind = kind;
-    pickerPop.dataset.kind = kind;
-    pickerPop.classList.remove('closing');
-    pickerButtons[kind].setAttribute('aria-expanded', 'true');
-    if (kind === 'session') await loadSessions();
-    renderList();
-    pickerPop.hidden = false;
-    positionPicker();
+async function openSettings() {
+    settingsOpen = true;
+    settingsPop.classList.remove('closing');
+    settingsButton.setAttribute('aria-expanded', 'true');
+    renderSettings();
+    settingsPop.hidden = false;
+    positionSettings();
     await loadAgents();
-    positionPicker();
+    positionSettings();
 }
 
-// closePicker fades the popover out, then hides it.
-function closePicker(refocus = true) {
-    if (!openKind) return;
-    pickerButtons[openKind].setAttribute('aria-expanded', 'false');
-    openKind = null;
+// closeSettings fades the popover out, then hides it.
+function closeSettings(refocus = true) {
+    if (!settingsOpen) return;
+    settingsOpen = false;
+    settingsButton.setAttribute('aria-expanded', 'false');
     saveCustomCommand();
-    pickerPop.classList.add('closing');
-    pickerPop.addEventListener('animationend', () => {
-        if (!openKind) pickerPop.hidden = true;
-        pickerPop.classList.remove('closing');
+    settingsPop.classList.add('closing');
+    settingsPop.addEventListener('animationend', () => {
+        if (!settingsOpen) settingsPop.hidden = true;
+        settingsPop.classList.remove('closing');
     }, {once: true});
     if (refocus) input.focus();
 }
 
 // ---------- custom agent command ----------
 
-const customCmd = document.getElementById('custom-cmd');
 const customInput = document.getElementById('custom-input');
 
 async function saveCustomCommand() {
@@ -566,7 +603,7 @@ async function saveCustomCommand() {
     try {
         await Launcher.SetCustomCommand(command);
     } catch (err) {
-        addText('system error', String(err));
+        if (view) addText(view, 'system error', String(err));
     }
     await loadAgents();
 }
@@ -582,17 +619,15 @@ customInput.addEventListener('keydown', async e => {
 });
 customInput.addEventListener('blur', saveCustomCommand);
 
-for (const [kind, button] of Object.entries(pickerButtons)) {
-    button.addEventListener('click', () => (openKind === kind ? closePicker() : openPicker(kind)));
-}
-window.addEventListener('resize', positionPicker);
+settingsButton.addEventListener('click', () => (settingsOpen ? closeSettings() : openSettings()));
+window.addEventListener('resize', positionSettings);
 Events.On('agents:changed', loadAgents);
 
 // Clicks on the empty stage around the cards act like clicking outside the
-// window: close the picker, or hide.
+// window: close the settings, or hide.
 stage.addEventListener('mousedown', e => {
-    if (openKind && !e.target.closest('.picker, #picker-pop')) {
-        closePicker();
+    if (settingsOpen && !e.target.closest('#settings-button, #settings-pop')) {
+        closeSettings();
         return;
     }
     // The window card's padding is invisible while collapsed, so it counts as
@@ -610,18 +645,94 @@ Events.On('window:shown', () => {
     input.select();
 });
 
-Events.On('session:new', clearHistory);
+// ---------- sessions ----------
 
-// A resumed session replaces the chat with its earlier messages.
-Events.On('session:resumed', ({data: items}) => {
-    clearHistory();
-    for (const it of items ?? []) {
-        if (it.role === 'user') addText('user', it.text);
-        else if (it.role === 'assistant') addMarkdown(it.text);
-        else addTool(it.tool, it.text);
+// The tray shows every session in a row that scrolls sideways, between the
+// New and settings buttons. The symbol before each name shows its status;
+// Tab and Shift+Tab step through them.
+const sessionRow = document.getElementById('session-row');
+const statusNames = {
+    idle: 'Idle',
+    running: 'Running',
+    waiting: 'Finished, waiting for you',
+    error: 'Stopped with an error',
+};
+
+let sessions = {current: '', sessions: []};
+let activeIndex = -1; // the session on screen, or the one Tab last stepped to
+
+async function loadSessions() {
+    sessions = await Launcher.GetSessions();
+    dropViews(new Set(sessions.sessions.map(s => s.key).filter(Boolean)));
+    activeIndex = sessions.sessions.findIndex(s => s.key === sessions.current);
+    renderSessions();
+}
+
+function renderSessions() {
+    sessionRow.replaceChildren(...sessions.sessions.map((s, i) => {
+        const b = document.createElement('button');
+        b.type = 'button';
+        b.className = 'session' + (i === activeIndex ? ' active' : '');
+        b.dataset.status = s.status;
+        b.title = `${s.title || 'New session'}\n${statusNames[s.status] ?? ''} · ${timeAgo(s.updated)}`;
+        const status = document.createElement('span');
+        status.className = 'status';
+        const name = document.createElement('span');
+        name.className = 'session-name';
+        name.textContent = s.title || 'New session';
+        b.append(status, name);
+        b.addEventListener('click', () => openSession(i));
+        return b;
+    }));
+    if (sessions.sessions.length === 0) {
+        const empty = document.createElement('span');
+        empty.className = 'session-empty';
+        empty.textContent = 'No sessions yet';
+        sessionRow.appendChild(empty);
     }
-    if (!items?.length) addText('system', 'Resumed an earlier session.');
-    history.scrollTop = history.scrollHeight;
+    sessionRow.children[activeIndex]?.scrollIntoView({inline: 'nearest', block: 'nearest'});
+}
+
+function openSession(i) {
+    const s = sessions.sessions[i];
+    if (!s) return;
+    activeIndex = i;
+    for (const [j, el] of [...sessionRow.children].entries()) el.classList.toggle('active', j === i);
+    sessionRow.children[i]?.scrollIntoView({inline: 'nearest', block: 'nearest'});
+    Launcher.OpenSession(s);
+    input.focus();
+}
+
+function stepSession(dir) {
+    const n = sessions.sessions.length;
+    if (n === 0) return;
+    openSession(activeIndex < 0 ? 0 : (activeIndex + dir + n) % n);
+}
+
+// A vertical wheel scrolls the row sideways.
+sessionRow.addEventListener('wheel', e => {
+    if (Math.abs(e.deltaY) <= Math.abs(e.deltaX)) return;
+    e.preventDefault();
+    sessionRow.scrollLeft += e.deltaY;
+}, {passive: false});
+
+Events.On('sessions:changed', loadSessions);
+
+// A session came on screen: a new one, a live one we already hold, or one
+// resumed from disk with its earlier messages.
+Events.On('session:open', ({data}) => {
+    const fresh = !views.has(data.key);
+    const v = getView(data.key);
+    if (fresh && data.history) {
+        for (const it of data.history) {
+            if (it.role === 'user') addText(v, 'user', it.text);
+            else if (it.role === 'assistant') addMarkdown(v, it.text);
+            else addTool(v, it.tool, it.text);
+        }
+        if (!data.history.length) addText(v, 'system', 'Resumed an earlier session.');
+    }
+    showView(data.key);
+    input.focus();
 });
 
 function showNotice(text) {
@@ -643,5 +754,6 @@ Launcher.GetCommands().then(list => {
 });
 
 loadAgents();
+loadSessions().then(() => showView(sessions.current));
 
 updateLayout();

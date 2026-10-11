@@ -11,28 +11,6 @@
  */
 
 /**
- * Event is what the UI receives. Type is one of:
- * 
- * 	init        session started; SessionID is set
- * 	commands    the available slash commands (Commands)
- * 	block       a new assistant text block starts
- * 	text        streamed assistant text (Text)
- * 	tool        the agent ran a tool (Tool, Text = short summary)
- * 	tool_error  the last tool call failed (Text)
- * 	done        the turn finished (IsError, Text on error, Cost)
- * 	exit        the agent process exited unexpectedly (Text = reason)
- * @typedef {Object} Event
- * @property {string} type
- * @property {string} [text]
- * @property {string} [tool]
- * @property {string} [sessionId]
- * @property {boolean} [isError]
- * @property {number} [cost]
- * @property {Command[] | null} [commands]
- * @property {Model[] | null} [models]
- */
-
-/**
  * HistoryItem is one entry of a past conversation, for showing it again.
  * @typedef {Object} HistoryItem
  * @property {string} role - "user", "assistant" or "tool"
@@ -47,14 +25,6 @@
  * @property {string} label
  * @property {string} [description]
  * @property {string[] | null} [efforts]
- */
-
-/**
- * SessionInfo is a past conversation that can be resumed.
- * @typedef {Object} SessionInfo
- * @property {string} id
- * @property {string} title
- * @property {string} updated
  */
 
 // In interface mode, this file is likely to contain just comments.

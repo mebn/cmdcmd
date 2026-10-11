@@ -10,6 +10,11 @@ export {
 import * as $models from "./models.js";
 
 /**
+ * AgentEvent is an agent event tagged with the session it belongs to.
+ * @typedef {$models.AgentEvent} AgentEvent
+ */
+
+/**
  * AgentInfo describes an agent for the picker.
  * @typedef {$models.AgentInfo} AgentInfo
  */
@@ -20,11 +25,29 @@ import * as $models from "./models.js";
  */
 
 /**
+ * OpenedSession tells the UI which session is now on screen. History is set
+ * only for a session resumed from disk; the UI already holds the others.
+ * @typedef {$models.OpenedSession} OpenedSession
+ */
+
+/**
  * Selection is the chosen agent, model and effort ("" = default).
  * @typedef {$models.Selection} Selection
  */
 
 /**
- * SessionList is the current agent's recent sessions and which one is open.
+ * SessionItem is one entry of the sessions bar: a live session (Key set), a
+ * past one on disk (ID set), or both.
+ * @typedef {$models.SessionItem} SessionItem
+ */
+
+/**
+ * SessionList is the current agent's sessions, newest first, and the key of
+ * the one on screen.
  * @typedef {$models.SessionList} SessionList
+ */
+
+/**
+ * ShellResult is the output of a ! command, and why it failed if it did.
+ * @typedef {$models.ShellResult} ShellResult
  */

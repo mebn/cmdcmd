@@ -3,6 +3,8 @@
 // events.
 package session
 
+import "os/exec"
+
 // Event is what the UI receives. Type is one of:
 //
 //	init        session started; SessionID is set
@@ -67,3 +69,6 @@ type Agent interface {
 	// Close stops the agent.
 	Close()
 }
+
+// HideWindow keeps Windows from flashing a console window for cmd.
+func HideWindow(cmd *exec.Cmd) { hideWindow(cmd) }

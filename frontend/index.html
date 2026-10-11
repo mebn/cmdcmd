@@ -14,7 +14,6 @@
                     <span id="notice-text"></span>
                     <button id="notice-settings" type="button" hidden>Open Settings</button>
                 </div>
-                <div id="history"></div>
                 <div id="menu" role="listbox" hidden></div>
             </div>
 
@@ -28,41 +27,38 @@
 
         <div id="dock">
             <div id="tray">
-                <button id="new" class="chip" type="button" title="New session (⌘N)">
+                <button id="new" class="icon-button" type="button" title="New session (⌘N)" aria-label="New session">
                     <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg>
-                    New
                 </button>
-                <button id="session-button" class="chip picker" type="button" title="Resume a past session" aria-haspopup="listbox" aria-expanded="false">
-                    <span class="label">Sessions</span>
-                    <svg class="chevron" viewBox="0 0 24 24" aria-hidden="true"><path d="M7 10l5 5 5-5"/></svg>
-                </button>
-                <span class="spacer"></span>
-                <button id="agent-button" class="chip picker" type="button" title="Agent" aria-haspopup="listbox" aria-expanded="false">
-                    <span class="label"></span>
-                    <svg class="chevron" viewBox="0 0 24 24" aria-hidden="true"><path d="M7 10l5 5 5-5"/></svg>
-                </button>
-                <button id="model-button" class="chip picker" type="button" title="Model" aria-haspopup="listbox" aria-expanded="false">
-                    <span class="label"></span>
-                    <svg class="chevron" viewBox="0 0 24 24" aria-hidden="true"><path d="M7 10l5 5 5-5"/></svg>
-                </button>
-                <button id="effort-button" class="chip picker" type="button" title="Effort" aria-haspopup="listbox" aria-expanded="false">
-                    <span class="label"></span>
-                    <svg class="chevron" viewBox="0 0 24 24" aria-hidden="true"><path d="M7 10l5 5 5-5"/></svg>
+                <div id="session-row" role="listbox" aria-label="Sessions"></div>
+                <button id="settings-button" class="icon-button" type="button" title="Settings" aria-label="Settings" aria-haspopup="dialog" aria-expanded="false">
+                    <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
                 </button>
             </div>
         </div>
     </div>
 </div>
 
-<!-- Top level so it layers above every card. The three pickers share it. -->
-<div id="picker-pop" class="popover" role="listbox" hidden>
+<!-- Top level so it layers above every card. -->
+<div id="settings-pop" class="popover" role="dialog" aria-label="Settings" hidden>
     <div class="popover-scroll">
-        <div id="pop-list" class="option-list"></div>
-        <div id="custom-cmd" class="custom-cmd" hidden>
-            <label for="custom-input">Custom command</label>
-            <input id="custom-input" type="text" spellcheck="false" autocomplete="off" placeholder="e.g. ollama run llama3">
-            <div class="custom-hint">Gets each message on stdin and replies on stdout. Enter to use it.</div>
-        </div>
+        <section class="option-section">
+            <div class="section-title">Agent</div>
+            <div id="agent-list" class="option-list"></div>
+            <div class="custom-cmd">
+                <label for="custom-input">Custom command</label>
+                <input id="custom-input" type="text" spellcheck="false" autocomplete="off" placeholder="e.g. ollama run llama3">
+                <div class="custom-hint">Gets each message on stdin and replies on stdout. Enter to use it.</div>
+            </div>
+        </section>
+        <section class="option-section">
+            <div class="section-title">Model</div>
+            <div id="model-list" class="option-list"></div>
+        </section>
+        <section class="option-section">
+            <div class="section-title">Effort</div>
+            <div id="effort-list" class="option-list"></div>
+        </section>
     </div>
 </div>
 

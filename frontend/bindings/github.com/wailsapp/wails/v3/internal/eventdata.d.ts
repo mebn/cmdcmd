@@ -7,16 +7,16 @@ import type { Events } from "@wailsio/runtime";
 
 // eslint-disable-next-line @typescript-eslint/ban-ts-comment
 // @ts-ignore: Unused imports
-import type * as session$0 from "../../../../../cmdcmd/internal/session/models.js";
+import type * as main$0 from "../../../../../cmdcmd/models.js";
 
 declare module "@wailsio/runtime" {
     namespace Events {
         interface CustomEvents {
             "agents:changed": void;
-            "claude": session$0.Event;
+            "claude": main$0.AgentEvent;
             "notice": string;
-            "session:new": void;
-            "session:resumed": session$0.HistoryItem[] | null;
+            "session:open": main$0.OpenedSession;
+            "sessions:changed": void;
             "window:shown": void;
         }
     }

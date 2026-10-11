@@ -61,7 +61,8 @@ export function GetSelection() {
 }
 
 /**
- * GetSessions lists the current agent's recent sessions, newest first.
+ * GetSessions lists the current agent's live and past sessions, newest
+ * first. The session on screen is always included.
  * @returns {$CancellablePromise<$models.SessionList>}
  */
 export function GetSessions() {
@@ -77,7 +78,8 @@ export function Hide() {
 }
 
 /**
- * NewSession ends the current conversation and starts a fresh one.
+ * NewSession starts a fresh conversation. The one on screen keeps running in
+ * the background if it is mid-turn.
  * @returns {$CancellablePromise<void>}
  */
 export function NewSession() {
@@ -94,6 +96,16 @@ export function OpenPermissionSettings() {
 }
 
 /**
+ * OpenSession puts a session on screen: a live one by key, or a past one by
+ * ID, which is resumed and its messages sent to the UI.
+ * @param {$models.SessionItem} item
+ * @returns {$CancellablePromise<void>}
+ */
+export function OpenSession(item) {
+    return $Call.ByID(3483119804, item);
+}
+
+/**
  * Quit exits cmdcmd, stopping the agent.
  * @returns {$CancellablePromise<void>}
  */
@@ -102,17 +114,19 @@ export function Quit() {
 }
 
 /**
- * ResumeSession switches to a past session of the current agent and sends
- * its messages to the UI as a "session:resumed" event.
- * @param {string} id
- * @returns {$CancellablePromise<void>}
+ * RunShell runs a ! command in the working folder and returns its output.
+ * The command and output go to the agent with the next message, the way
+ * Claude Code's bash mode does.
+ * @param {string} command
+ * @returns {$CancellablePromise<$models.ShellResult>}
  */
-export function ResumeSession(id) {
-    return $Call.ByID(2930477269, id);
+export function RunShell(command) {
+    return $Call.ByID(2608503385, command);
 }
 
 /**
- * Send sends a message to the current agent.
+ * Send sends a message to the current session, along with the output of any
+ * ! commands run since the last one.
  * @param {string} text
  * @returns {$CancellablePromise<void>}
  */

@@ -5,6 +5,7 @@ import (
 	"slices"
 	"strings"
 	"sync"
+	"time"
 
 	"cmdcmd/internal/config"
 	"cmdcmd/internal/hotkey"
@@ -32,14 +33,16 @@ type Launcher struct {
 
 	mu           sync.Mutex
 	cfg          config.Config
-	agent        session.Agent
-	sessionID    string // the current conversation's ID, once known
+	live         []*liveSession // the session on screen and any running in the background
+	current      *liveSession
+	nextKey      int
+	activity     map[string]time.Time // session ID → last status change, for sessions cmdcmd has held
 	commands     []session.Command
 	claudeModels []session.Model
 }
 
 func NewLauncher() *Launcher {
-	l := &Launcher{env: config.Env()}
+	l := &Launcher{env: config.Env(), activity: map[string]time.Time{}}
 	cfg, err := config.Load()
 	if err != nil {
 		l.notice = "Could not read config: " + err.Error()
@@ -50,7 +53,7 @@ func NewLauncher() *Launcher {
 		l.notice = err.Error() + "; using the default"
 		l.hotkey, _ = hotkey.Parse(hotkey.Default)
 	}
-	l.agent = l.newAgent()
+	l.newLive("", "")
 	return l
 }
 
@@ -105,81 +108,14 @@ func (l *Launcher) OpenPermissionSettings() {
 func (l *Launcher) shutdown() {
 	l.mu.Lock()
 	defer l.mu.Unlock()
-	l.agent.Close()
+	for _, ls := range l.live {
+		if ls.agent != nil {
+			ls.agent.Close()
+		}
+	}
 }
 
 // ---------- agents ----------
-
-// newAgent creates the agent selected in the config. Callers must hold l.mu
-// (or be the constructor).
-func (l *Launcher) newAgent() session.Agent {
-	return l.newAgentResuming("")
-}
-
-// newAgentResuming creates the selected agent, continuing the session with
-// the given ID if it is not empty. Callers must hold l.mu.
-func (l *Launcher) newAgentResuming(resumeID string) session.Agent {
-	cfg := l.cfg
-	opts := session.Options{
-		Cwd:      cfg.ResolvedCwd(),
-		Env:      l.env,
-		Model:    cfg.Model,
-		Effort:   cfg.Effort,
-		ResumeID: resumeID,
-	}
-	var a session.Agent
-	onEvent := func(ev session.Event) { l.onAgentEvent(a, ev) }
-	switch cfg.Agent {
-	case "codex":
-		opts.Path = cfg.FindCodex(l.env)
-		opts.Sandbox = cfg.CodexSandbox
-		a = session.NewCodex(opts, onEvent)
-	case "custom":
-		opts.Path, opts.Args = config.Shell(cfg.Custom.Command)
-		a = session.NewCustom(opts, onEvent)
-	default:
-		opts.Path = cfg.FindClaude(l.env)
-		opts.PermissionMode = cfg.PermissionMode
-		a = session.NewClaude(opts, onEvent)
-	}
-	return a
-}
-
-func (l *Launcher) onAgentEvent(a session.Agent, ev session.Event) {
-	// Drop events from an agent that was replaced.
-	l.mu.Lock()
-	current := l.agent == a
-	if current && ev.Type == "init" {
-		l.sessionID = ev.SessionID
-	}
-	if current && ev.Type == "commands" {
-		l.commands = ev.Commands
-		if len(ev.Models) > 0 {
-			l.claudeModels = ev.Models
-		}
-	}
-	l.mu.Unlock()
-	if !current || l.app == nil {
-		return
-	}
-	l.app.Event.Emit("claude", ev)
-	if len(ev.Models) > 0 {
-		l.app.Event.Emit("agents:changed")
-	}
-}
-
-// startAgent prepares the agent in the background: Claude starts warm so the
-// first reply is faster and the slash command list arrives early.
-func (l *Launcher) startAgent() {
-	l.mu.Lock()
-	a := l.agent
-	l.mu.Unlock()
-	go func() {
-		if err := a.Start(); err != nil {
-			l.app.Event.Emit("claude", session.Event{Type: "exit", Text: err.Error()})
-		}
-	}()
-}
 
 // AgentInfo describes an agent for the picker.
 type AgentInfo struct {
@@ -285,7 +221,7 @@ func (l *Launcher) SetSelection(sel Selection) error {
 	l.cfg.Agent, l.cfg.Model, l.cfg.Effort = sel.Agent, sel.Model, sel.Effort
 	cfg := l.cfg
 	if !agentChanged {
-		l.agent.Configure(sel.Model, sel.Effort)
+		l.current.agent.Configure(sel.Model, sel.Effort)
 	}
 	l.mu.Unlock()
 
@@ -341,79 +277,6 @@ func (l *Launcher) GetInfo() Info {
 	}
 }
 
-// Send sends a message to the current agent.
-func (l *Launcher) Send(text string) error {
-	l.mu.Lock()
-	a := l.agent
-	l.mu.Unlock()
-	return a.Send(text)
-}
-
-// NewSession ends the current conversation and starts a fresh one.
-func (l *Launcher) NewSession() {
-	l.mu.Lock()
-	l.agent.Close()
-	l.agent = l.newAgent()
-	l.sessionID = ""
-	l.commands = nil
-	l.mu.Unlock()
-	if l.app != nil {
-		l.app.Event.Emit("session:new")
-		l.startAgent()
-	}
-}
-
-// ---------- past sessions ----------
-
-// SessionList is the current agent's recent sessions and which one is open.
-type SessionList struct {
-	Current  string                `json:"current"`
-	Sessions []session.SessionInfo `json:"sessions"`
-}
-
-// GetSessions lists the current agent's recent sessions, newest first.
-func (l *Launcher) GetSessions() SessionList {
-	l.mu.Lock()
-	agent, cwd, current := l.cfg.Agent, l.cfg.ResolvedCwd(), l.sessionID
-	l.mu.Unlock()
-	list := SessionList{Current: current, Sessions: []session.SessionInfo{}}
-	switch agent {
-	case "claude":
-		list.Sessions = append(list.Sessions, session.ClaudeSessions(cwd)...)
-	case "codex":
-		list.Sessions = append(list.Sessions, session.CodexSessions()...)
-	}
-	return list
-}
-
-// ResumeSession switches to a past session of the current agent and sends
-// its messages to the UI as a "session:resumed" event.
-func (l *Launcher) ResumeSession(id string) {
-	l.mu.Lock()
-	agent, cwd := l.cfg.Agent, l.cfg.ResolvedCwd()
-	if id == l.sessionID || agent == "custom" {
-		l.mu.Unlock()
-		return
-	}
-	l.agent.Close()
-	l.agent = l.newAgentResuming(id)
-	l.sessionID = id
-	l.commands = nil
-	l.mu.Unlock()
-
-	var history []session.HistoryItem
-	if agent == "claude" {
-		history = session.ClaudeHistory(cwd, id)
-	} else {
-		history = session.CodexHistory(id)
-	}
-	if history == nil {
-		history = []session.HistoryItem{}
-	}
-	l.app.Event.Emit("session:resumed", history)
-	l.startAgent()
-}
-
 // ---------- window ----------
 
 // Toggle shows the window if hidden and hides it otherwise.
@@ -432,6 +295,7 @@ func (l *Launcher) Show() {
 	l.window.Show()
 	l.window.Focus()
 	l.app.Event.Emit("window:shown")
+	l.markSeen()
 }
 
 // Hide hides the window. The agent keeps running.

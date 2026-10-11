@@ -7,6 +7,20 @@
 import * as session$0 from "./internal/session/models.js";
 
 /**
+ * AgentEvent is an agent event tagged with the session it belongs to.
+ * @typedef {Object} AgentEvent
+ * @property {string} session
+ * @property {string} type
+ * @property {string} [text]
+ * @property {string} [tool]
+ * @property {string} [sessionId]
+ * @property {boolean} [isError]
+ * @property {number} [cost]
+ * @property {session$0.Command[] | null} [commands]
+ * @property {session$0.Model[] | null} [models]
+ */
+
+/**
  * AgentInfo describes an agent for the picker.
  * @typedef {Object} AgentInfo
  * @property {string} id
@@ -27,6 +41,14 @@ import * as session$0 from "./internal/session/models.js";
  */
 
 /**
+ * OpenedSession tells the UI which session is now on screen. History is set
+ * only for a session resumed from disk; the UI already holds the others.
+ * @typedef {Object} OpenedSession
+ * @property {string} key
+ * @property {session$0.HistoryItem[] | null} history
+ */
+
+/**
  * Selection is the chosen agent, model and effort ("" = default).
  * @typedef {Object} Selection
  * @property {string} agent
@@ -35,10 +57,29 @@ import * as session$0 from "./internal/session/models.js";
  */
 
 /**
- * SessionList is the current agent's recent sessions and which one is open.
+ * SessionItem is one entry of the sessions bar: a live session (Key set), a
+ * past one on disk (ID set), or both.
+ * @typedef {Object} SessionItem
+ * @property {string} key
+ * @property {string} id
+ * @property {string} title
+ * @property {string} updated
+ * @property {string} status
+ */
+
+/**
+ * SessionList is the current agent's sessions, newest first, and the key of
+ * the one on screen.
  * @typedef {Object} SessionList
  * @property {string} current
- * @property {session$0.SessionInfo[] | null} sessions
+ * @property {SessionItem[] | null} sessions
+ */
+
+/**
+ * ShellResult is the output of a ! command, and why it failed if it did.
+ * @typedef {Object} ShellResult
+ * @property {string} output
+ * @property {string} [error]
  */
 
 // In interface mode, this file is likely to contain just comments.

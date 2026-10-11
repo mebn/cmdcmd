@@ -9,6 +9,7 @@ func TestUserText(t *testing.T) {
 		{"<command-name>/clear</command-name>", "/clear"},
 		{"<local-command-stdout>ok</local-command-stdout>", ""},
 		{"  ", ""},
+		{"<bash-input>ls</bash-input>\n<bash-stdout>a b</bash-stdout>\n\nwhat are these?", "what are these?"},
 	} {
 		if got := userText(tt.in); got != tt.want {
 			t.Errorf("userText(%q) = %q, want %q", tt.in, got, tt.want)

@@ -18,6 +18,7 @@
     --accent-text: #fff;
     --danger: #ff6961;
     --ok: #32d74b;
+    --bash: #ff6ac1;
     /* Reaches about 28px sideways and 44px down; the stage margin must be
        larger or the shadow is cut off at the window edge. */
     --shadow: 0 16px 40px -12px rgba(0, 0, 0, 0.55), 0 2px 8px rgba(0, 0, 0, 0.22);
@@ -43,6 +44,7 @@
         --accent: #007aff;
         --danger: #ff3b30;
         --ok: #28a745;
+        --bash: #d6338f;
         --shadow: 0 16px 40px -12px rgba(0, 0, 0, 0.22), 0 2px 8px rgba(0, 0, 0, 0.07);
     }
 }
@@ -209,6 +211,15 @@ svg {
 
 #input::placeholder { color: var(--text-3); }
 
+/* A leading "!" runs the line as a shell command. */
+#composer.bash { border-color: color-mix(in srgb, var(--bash) 60%, transparent); }
+#composer.bash #input {
+    font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+    font-size: 16px;
+    caret-color: var(--bash);
+}
+#composer.bash .send-button:not(:disabled) { background: var(--bash); }
+
 .send-button {
     position: relative;
     flex: none;
@@ -250,12 +261,11 @@ than the composer and centered. */
 #tray {
     align-self: center;
     width: 90%;
-    min-width: fit-content;
     display: flex;
     align-items: center;
     gap: 4px;
     margin-top: var(--gap);
-    padding: 5px 8px;
+    padding: 5px 6px;
     border-radius: 18px;
     background: var(--surface);
     border: 0.5px solid var(--hairline);
@@ -263,34 +273,97 @@ than the composer and centered. */
     font-size: 12.5px;
 }
 
-.spacer { flex: 1; }
+.icon-button {
+    flex: none;
+    display: grid;
+    place-items: center;
+    width: 30px;
+    height: 30px;
+    border-radius: 50%;
+    color: var(--text-2);
+    transition: background 120ms ease, color 120ms ease, transform 140ms var(--ease);
+}
+.icon-button:hover, .icon-button[aria-expanded="true"] { background: var(--fill-2); color: var(--text); }
+.icon-button:active { transform: scale(0.92); }
+.icon-button svg { width: 16px; height: 16px; }
+#settings-button svg { transition: transform 300ms var(--ease); }
+#settings-button[aria-expanded="true"] svg { transform: rotate(60deg); }
 
-.chip {
+/* ---------- sessions ---------- */
+
+/* The sessions sit in the tray between New and settings, in a row that
+   scrolls sideways. */
+#session-row {
+    flex: 1;
+    min-width: 0;
+    display: flex;
+    gap: 2px;
+    overflow-x: auto;
+    scrollbar-width: none;
+    scroll-padding-inline: 16px;
+    -webkit-mask-image: linear-gradient(to right, transparent 0, #000 10px, #000 calc(100% - 10px), transparent 100%);
+    mask-image: linear-gradient(to right, transparent 0, #000 10px, #000 calc(100% - 10px), transparent 100%);
+}
+#session-row::-webkit-scrollbar { display: none; }
+
+.session {
+    flex: none;
     display: inline-flex;
     align-items: center;
-    gap: 6px;
+    gap: 7px;
+    max-width: 200px;
     height: 28px;
-    padding: 0 10px;
+    padding: 0 12px 0 10px;
     border-radius: 999px;
     color: var(--text-2);
+    font-size: 12.5px;
     font-weight: 500;
-    white-space: nowrap;
     transition: background 120ms ease, color 120ms ease;
 }
-.chip:hover, .chip[aria-expanded="true"] { background: var(--fill-2); color: var(--text); }
-.chip svg { width: 14px; height: 14px; }
-.chip .chevron { transition: transform 200ms var(--ease); }
-.chip[aria-expanded="true"] .chevron { transform: rotate(180deg); }
+.session:first-child { margin-left: 6px; }
+.session:last-child { margin-right: 6px; }
+.session:hover { background: var(--fill-2); color: var(--text); }
+.session.active { background: var(--fill-3); color: var(--text); }
+.session-name { min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.session-empty { padding: 4px 12px; font-size: 12.5px; color: var(--text-3); }
 
-/* ---------- picker popover ---------- */
+/* Status symbols: a hollow ring when idle, a spinner while running, a
+   glowing dot when a reply is waiting for you, a red dot after an error. */
+.status {
+    flex: none;
+    position: relative;
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    border: 1.5px solid var(--text-3);
+}
+[data-status="running"] > .status {
+    width: 10px;
+    height: 10px;
+    border: 1.5px solid color-mix(in srgb, var(--accent) 25%, transparent);
+    border-top-color: var(--accent);
+    animation: spin 0.8s linear infinite;
+}
+[data-status="waiting"] > .status {
+    border: none;
+    background: var(--accent);
+    box-shadow: 0 0 0 0 color-mix(in srgb, var(--accent) 60%, transparent);
+    animation: ping 1.8s var(--ease) infinite;
+}
+@keyframes ping {
+    70%, 100% { box-shadow: 0 0 0 5px transparent; }
+}
+[data-status="error"] > .status { border: none; background: var(--danger); }
+
+/* ---------- settings popover ---------- */
 
 /* The popover lives at the top level of the page and is placed next to the
-   picker button by JS, so no card can cover or clip it. The outer box clips
+   settings button by JS, so no card can cover or clip it. The outer box clips
    to the rounded shape; the inner box scrolls. */
 .popover {
     position: fixed;
     z-index: 1000;
-    width: 330px;
+    width: 300px;
     border-radius: 18px;
     overflow: hidden;
     background: var(--popover);
@@ -299,8 +372,8 @@ than the composer and centered. */
     animation: pop 200ms var(--ease);
 }
 .popover[hidden] { display: none; }
-.popover.up { transform-origin: 85% 100%; }
-.popover.down { transform-origin: 85% 0; }
+.popover.up { transform-origin: 95% 100%; }
+.popover.down { transform-origin: 95% 0; }
 @keyframes pop {
     from { opacity: 0; transform: scale(0.96); }
     to { opacity: 1; transform: none; }
@@ -317,9 +390,20 @@ than the composer and centered. */
     padding: 8px;
 }
 
-.popover[data-kind="agent"] { width: 260px; }
-.popover[data-kind="effort"] { width: 220px; }
-.popover[data-kind="session"] { width: 380px; }
+.option-section[hidden] { display: none; }
+.option-section + .option-section {
+    margin-top: 6px;
+    padding-top: 6px;
+    border-top: 0.5px solid var(--hairline);
+}
+.section-title {
+    padding: 6px 10px 4px;
+    font-size: 11px;
+    font-weight: 600;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    color: var(--text-3);
+}
 
 .option-list { display: flex; flex-direction: column; gap: 1px; }
 .option {
@@ -346,20 +430,13 @@ than the composer and centered. */
 .option .check { grid-row: 1 / span 2; grid-column: 2; color: var(--accent); visibility: hidden; }
 .option.active .check { visibility: visible; }
 
-.custom-cmd {
-    margin: 6px 2px 2px;
-    padding: 10px 8px 4px;
-    border-top: 0.5px solid var(--hairline);
-}
-.custom-cmd[hidden] { display: none; }
+.custom-cmd { margin: 4px 2px 2px; padding: 4px 8px; }
 .custom-cmd label {
     display: block;
     margin-bottom: 6px;
-    font-size: 11px;
-    font-weight: 600;
-    letter-spacing: 0.04em;
-    text-transform: uppercase;
-    color: var(--text-3);
+    font-size: 12px;
+    font-weight: 500;
+    color: var(--text-2);
 }
 .custom-cmd input {
     width: 100%;
@@ -381,8 +458,6 @@ than the composer and centered. */
 .custom-cmd input::placeholder { color: var(--text-3); }
 .custom-hint { margin-top: 6px; font-size: 11.5px; color: var(--text-3); }
 
-.chip.picker { gap: 4px; padding: 0 8px 0 10px; }
-.chip[hidden] { display: none; }
 
 /* ---------- notice ---------- */
 
@@ -409,7 +484,8 @@ than the composer and centered. */
 
 /* ---------- history ---------- */
 
-#history {
+/* One history pane per live session; only the one on screen shows. */
+.history {
     flex: 1;
     min-height: 0;
     overflow-y: auto;
@@ -422,9 +498,10 @@ than the composer and centered. */
     -webkit-mask-image: linear-gradient(to bottom, transparent 0, #000 18px, #000 calc(100% - 14px), transparent 100%);
     mask-image: linear-gradient(to bottom, transparent 0, #000 18px, #000 calc(100% - 14px), transparent 100%);
 }
+.history:not(.active) { display: none; }
 
-#history::-webkit-scrollbar, #menu::-webkit-scrollbar, .popover-scroll::-webkit-scrollbar { width: 10px; }
-#history::-webkit-scrollbar-thumb, #menu::-webkit-scrollbar-thumb, .popover-scroll::-webkit-scrollbar-thumb {
+.history::-webkit-scrollbar, #menu::-webkit-scrollbar, .popover-scroll::-webkit-scrollbar { width: 10px; }
+.history::-webkit-scrollbar-thumb, #menu::-webkit-scrollbar-thumb, .popover-scroll::-webkit-scrollbar-thumb {
     background: var(--fill-3);
     border-radius: 10px;
     border: 3px solid transparent;
@@ -507,6 +584,26 @@ than the composer and centered. */
     text-overflow: ellipsis;
 }
 
+.msg.user.bash {
+    background: color-mix(in srgb, var(--bash) 18%, transparent);
+    color: var(--text);
+    font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+    font-size: 13.5px;
+}
+.msg.shell {
+    padding: 10px 14px;
+    border-radius: 12px;
+    background: var(--code);
+    font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+    font-size: 12.5px;
+    line-height: 1.5;
+    white-space: pre-wrap;
+    max-height: 320px;
+    overflow-y: auto;
+}
+.msg.shell.running { color: var(--text-3); }
+.msg.shell.failed { color: var(--danger); }
+
 .msg.system { font-size: 13px; color: var(--text-2); }
 .msg.system.error { color: var(--danger); white-space: pre-wrap; }
 
@@ -538,7 +635,7 @@ than the composer and centered. */
 #menu[hidden] { display: none; }
 @keyframes fade { from { opacity: 0; } to { opacity: 1; } }
 
-#chat.menu-open #history,
+#chat.menu-open .history,
 #chat.menu-open #notice { visibility: hidden; }
 
 .cmd {

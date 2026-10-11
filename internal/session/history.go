@@ -105,7 +105,11 @@ type claudeRecord struct {
 	} `json:"message"`
 }
 
-var commandTag = regexp.MustCompile(`<command-(name|args)>([\s\S]*?)</command-(?:name|args)>`)
+var (
+	commandTag = regexp.MustCompile(`<command-(name|args)>([\s\S]*?)</command-(?:name|args)>`)
+	// The output of ! commands, sent along with the next message.
+	bashTag = regexp.MustCompile(`<bash-(input|stdout|stderr)>[\s\S]*?</bash-(?:input|stdout|stderr)>`)
+)
 
 // claudeItems turns one transcript record into history items.
 func claudeItems(line []byte) []HistoryItem {
@@ -142,10 +146,10 @@ func claudeItems(line []byte) []HistoryItem {
 }
 
 // userText cleans up a user message: slash command invocations become
-// "/name args", and other tool-generated messages (which start with a tag)
-// are dropped.
+// "/name args", ! command output is removed, and other tool-generated
+// messages (which start with a tag) are dropped.
 func userText(text string) string {
-	text = strings.TrimSpace(text)
+	text = strings.TrimSpace(bashTag.ReplaceAllString(text, ""))
 	if strings.Contains(text, "<command-name>") {
 		var name, args string
 		for _, m := range commandTag.FindAllStringSubmatch(text, -1) {
