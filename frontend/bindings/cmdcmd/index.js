@@ -20,6 +20,22 @@ import * as $models from "./models.js";
  */
 
 /**
+ * AppendedItems are messages another client added to a session.
+ * @typedef {$models.AppendedItems} AppendedItems
+ */
+
+/**
+ * FolderItem is one folder in the bar.
+ * @typedef {$models.FolderItem} FolderItem
+ */
+
+/**
+ * FolderList is the folders in the bar, pinned first, the selected one (""
+ * for All) and the configured cwd, where sessions under All start.
+ * @typedef {$models.FolderList} FolderList
+ */
+
+/**
  * Info describes the session for the UI.
  * @typedef {$models.Info} Info
  */

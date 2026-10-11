@@ -1,10 +1,14 @@
 package main
 
 import (
+	"cmp"
 	"context"
+	"errors"
 	"fmt"
 	"maps"
 	"os/exec"
+	"path/filepath"
+	"runtime"
 	"slices"
 	"strings"
 	"time"
@@ -30,11 +34,24 @@ type liveSession struct {
 	kind    string        // "claude", "codex" or "custom"
 	agent   session.Agent // nil once closed
 	id      string        // the agent's session ID, once known
+	cwd     string        // the directory the agent runs in
 	title   string
 	updated time.Time // when the status last changed; the bar sorts by it
 	status  string
 	busy    int    // turns sent but not finished
 	shell   string // output of ! commands, sent along with the next message
+
+	// The transcript is followed while the session is on screen, to show
+	// turns another client (Claude Code in a terminal) adds to it.
+	tail    int64 // how far it has been read
+	tailing bool  // tail is set
+	stale   bool  // another client added turns the agent hasn't loaded
+}
+
+// AppendedItems are messages another client added to a session.
+type AppendedItems struct {
+	Key   string                `json:"key"`
+	Items []session.HistoryItem `json:"items"`
 }
 
 // AgentEvent is an agent event tagged with the session it belongs to.
@@ -58,24 +75,28 @@ type SessionItem struct {
 	Title   string    `json:"title"`
 	Updated time.Time `json:"updated"`
 	Status  string    `json:"status"`
+	Cwd     string    `json:"cwd"`
+	Pinned  bool      `json:"pinned"`
 }
 
 // SessionList is the current agent's sessions, newest first, and the key of
 // the one on screen.
 type SessionList struct {
-	Current  string        `json:"current"`
-	Sessions []SessionItem `json:"sessions"`
+	Current    string        `json:"current"`
+	CurrentCwd string        `json:"currentCwd"` // where the session on screen runs
+	Sessions   []SessionItem `json:"sessions"`
 }
 
-// newLive creates a session for the selected agent, continuing the session
-// with the given ID if it is not empty, and makes it current. Callers must
-// hold l.mu.
-func (l *Launcher) newLive(resumeID, title string) *liveSession {
+// newLive creates a session for the selected agent in cwd, continuing the
+// session with the given ID if it is not empty, and makes it current.
+// Callers must hold l.mu.
+func (l *Launcher) newLive(resumeID, title, cwd string) *liveSession {
 	l.nextKey++
 	ls := &liveSession{
 		key:     fmt.Sprint("s", l.nextKey),
 		kind:    l.cfg.Agent,
 		id:      resumeID,
+		cwd:     cwd,
 		title:   title,
 		updated: time.Now(),
 		status:  statusIdle,
@@ -92,7 +113,7 @@ func (l *Launcher) newLive(resumeID, title string) *liveSession {
 func (l *Launcher) newAgent(ls *liveSession, resumeID string) session.Agent {
 	cfg := l.cfg
 	opts := session.Options{
-		Cwd:      cfg.ResolvedCwd(),
+		Cwd:      ls.cwd,
 		Env:      l.env,
 		Model:    cfg.Model,
 		Effort:   cfg.Effort,
@@ -239,6 +260,12 @@ func (l *Launcher) emitOpened(opened OpenedSession) {
 func (l *Launcher) Send(text string) error {
 	l.mu.Lock()
 	ls := l.current
+	if ls.stale && ls.busy == 0 && ls.id != "" {
+		// Resume afresh so the agent sees the turns another client added.
+		go ls.agent.Close()
+		ls.agent = l.newAgent(ls, ls.id)
+		ls.stale = false
+	}
 	a := ls.agent
 	if ls.title == "" {
 		ls.title = text
@@ -276,7 +303,8 @@ type ShellResult struct {
 // Claude Code's bash mode does.
 func (l *Launcher) RunShell(command string) ShellResult {
 	l.mu.Lock()
-	ls, cwd := l.current, l.cfg.ResolvedCwd()
+	ls := l.current
+	cwd := ls.cwd
 	l.mu.Unlock()
 
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
@@ -313,26 +341,37 @@ func tail(s string, n int) string {
 	return "…" + s[len(s)-n:]
 }
 
-// NewSession starts a fresh conversation. The one on screen keeps running in
+// NewSession starts a fresh conversation in the selected folder, or in the
+// configured cwd when All is selected. The one on screen keeps running in
 // the background if it is mid-turn.
 func (l *Launcher) NewSession() {
 	l.mu.Lock()
 	l.leave()
-	ls := l.newLive("", "")
+	ls := l.newLive("", "", l.scopeCwd())
 	l.mu.Unlock()
 	l.emitOpened(OpenedSession{Key: ls.key})
 }
 
-// GetSessions lists the current agent's live and past sessions, newest
-// first. The session on screen is always included.
+// GetSessions lists the current agent's live and past sessions in the
+// selected folder (or every folder, for All), pinned first, then newest
+// first.
 func (l *Launcher) GetSessions() SessionList {
 	l.mu.Lock()
-	kind, cwd := l.cfg.Agent, l.cfg.ResolvedCwd()
-	list := SessionList{Current: l.current.key, Sessions: []SessionItem{}}
+	kind, dirs := l.cfg.Agent, l.scopeDirs()
+	inScope := func(cwd string) bool { return slices.Contains(dirs, filepath.Clean(cwd)) }
+	pinned := map[string]bool{}
+	for _, id := range l.state.Pinned {
+		pinned[id] = true
+	}
+	deleted := map[string]bool{}
+	for _, id := range l.state.Deleted {
+		deleted[id] = true
+	}
+	list := SessionList{Current: l.current.key, CurrentCwd: l.current.cwd, Sessions: []SessionItem{}}
 	activity := maps.Clone(l.activity)
 	liveIDs := map[string]bool{}
 	for _, ls := range l.live {
-		if ls.kind != kind && ls != l.current {
+		if (ls.kind != kind && ls != l.current) || !inScope(ls.cwd) {
 			continue
 		}
 		if ls.id != "" {
@@ -340,6 +379,7 @@ func (l *Launcher) GetSessions() SessionList {
 		}
 		list.Sessions = append(list.Sessions, SessionItem{
 			Key: ls.key, ID: ls.id, Title: ls.title, Updated: ls.updated, Status: ls.status,
+			Cwd: ls.cwd, Pinned: pinned[ls.id],
 		})
 	}
 	l.mu.Unlock()
@@ -347,22 +387,170 @@ func (l *Launcher) GetSessions() SessionList {
 	var past []session.SessionInfo
 	switch kind {
 	case "claude":
-		past = session.ClaudeSessions(cwd)
+		for _, dir := range dirs {
+			past = append(past, session.ClaudeSessions(dir)...)
+		}
 	case "codex":
-		past = session.CodexSessions()
+		past = session.CodexSessions(inScope)
 	}
 	for _, s := range past {
-		if !liveIDs[s.ID] {
-			// Opening a session can touch its file; keep the time cmdcmd
-			// last saw its status change so the order stays put.
-			if t, ok := activity[s.ID]; ok {
-				s.Updated = t
+		if liveIDs[s.ID] || deleted[s.ID] {
+			continue
+		}
+		// Opening a session can touch its file; keep the time cmdcmd last
+		// saw its status change so the order stays put.
+		if t, ok := activity[s.ID]; ok {
+			s.Updated = t
+		}
+		list.Sessions = append(list.Sessions, SessionItem{
+			ID: s.ID, Title: s.Title, Updated: s.Updated, Status: statusFor(s.Running), Cwd: s.Cwd, Pinned: pinned[s.ID],
+		})
+	}
+	// A live Claude session can also be renamed or have turns run from Claude
+	// Code; its transcript tells.
+	if kind == "claude" {
+		for i, s := range list.Sessions {
+			if s.Key == "" || s.ID == "" {
+				continue
 			}
-			list.Sessions = append(list.Sessions, SessionItem{ID: s.ID, Title: s.Title, Updated: s.Updated, Status: statusIdle})
+			if t := session.ClaudeTitle(s.Cwd, s.ID); t != "" {
+				list.Sessions[i].Title = t
+			}
+			if s.Status == statusIdle && session.ClaudeRunning(s.Cwd, s.ID) {
+				list.Sessions[i].Status = statusRunning
+			}
 		}
 	}
-	slices.SortStableFunc(list.Sessions, func(a, b SessionItem) int { return b.Updated.Compare(a.Updated) })
+	slices.SortStableFunc(list.Sessions, func(a, b SessionItem) int {
+		if a.Pinned != b.Pinned {
+			if a.Pinned {
+				return -1
+			}
+			return 1
+		}
+		return b.Updated.Compare(a.Updated)
+	})
+	// All can span every folder on the machine; keep the bar to the recent
+	// ones (and everything pinned or live).
+	if len(list.Sessions) > maxListed {
+		kept := list.Sessions[:0]
+		for i, s := range list.Sessions {
+			if i < maxListed || s.Pinned || s.Key != "" {
+				kept = append(kept, s)
+			}
+		}
+		list.Sessions = kept
+	}
 	return list
+}
+
+const maxListed = 60
+
+func statusFor(running bool) string {
+	if running {
+		return statusRunning
+	}
+	return statusIdle
+}
+
+// RenameSession names a session. A Claude session's name is written to its
+// transcript the way /rename does, so Claude Code shows it too; a Codex
+// thread's goes to Codex's session index.
+func (l *Launcher) RenameSession(item SessionItem, title string) error {
+	title = strings.Join(strings.Fields(title), " ")
+	if title == "" {
+		return nil
+	}
+	if r := []rune(title); len(r) > maxTitle {
+		title = string(r[:maxTitle])
+	}
+	l.mu.Lock()
+	id, cwd, kind := item.ID, item.Cwd, l.cfg.Agent
+	if ls := l.findLive(item); ls != nil {
+		ls.title = title
+		id, cwd, kind = cmp.Or(id, ls.id), ls.cwd, ls.kind
+	}
+	l.mu.Unlock()
+
+	var err error
+	if id != "" {
+		switch kind {
+		case "claude":
+			err = session.RenameClaude(cwd, id, title)
+		case "codex":
+			err = session.RenameCodex(id, title)
+		}
+	}
+	l.app.Event.Emit("sessions:changed")
+	return err
+}
+
+// maxTitle caps session names, in characters.
+const maxTitle = 100
+
+// watchSessions reloads the bar while the window is up whenever a session
+// changes on disk: Claude Code started, renamed or finished one.
+func (l *Launcher) watchSessions() {
+	var last uint64
+	for range time.Tick(2 * time.Second) {
+		if l.window == nil || !l.window.IsVisible() {
+			continue
+		}
+		l.mu.Lock()
+		dirs, kind := l.allDirs(), l.cfg.Agent
+		l.mu.Unlock()
+		if fp := session.Fingerprint(kind, dirs); fp != last {
+			if last != 0 {
+				l.app.Event.Emit("sessions:changed")
+			}
+			last = fp
+		}
+	}
+}
+
+// followTranscripts shows, live, turns that another client such as Claude
+// Code in a terminal adds to the session on screen, and marks the session
+// so its agent picks them up before the next message.
+func (l *Launcher) followTranscripts() {
+	for range time.Tick(700 * time.Millisecond) {
+		l.mu.Lock()
+		ls := l.current
+		if ls == nil || ls.kind != "claude" || ls.id == "" {
+			l.mu.Unlock()
+			continue
+		}
+		id, cwd, offset, tailing := ls.id, ls.cwd, ls.tail, ls.tailing
+		l.mu.Unlock()
+
+		if !tailing {
+			// A new session: everything in it so far came from cmdcmd.
+			size := session.ClaudeSize(cwd, id)
+			l.mu.Lock()
+			if ls.id == id && !ls.tailing {
+				ls.tail, ls.tailing = size, true
+			}
+			l.mu.Unlock()
+			continue
+		}
+		items, next := session.ClaudeTail(cwd, id, offset)
+		if next == offset {
+			continue
+		}
+		l.mu.Lock()
+		if ls.tail != offset || ls.id != id {
+			l.mu.Unlock()
+			continue
+		}
+		ls.tail = next
+		if len(items) > 0 {
+			ls.stale = true
+			ls.updated = time.Now()
+		}
+		l.mu.Unlock()
+		if len(items) > 0 {
+			l.app.Event.Emit("session:append", AppendedItems{Key: ls.key, Items: items})
+		}
+	}
 }
 
 // OpenSession puts a session on screen: a live one by key, or a past one by
@@ -394,14 +582,21 @@ func (l *Launcher) OpenSession(item SessionItem) {
 		return
 	}
 
-	kind, cwd := l.cfg.Agent, l.cfg.ResolvedCwd()
-	ls := l.newLive(item.ID, item.Title)
+	kind, cwd := l.cfg.Agent, item.Cwd
+	if cwd == "" {
+		cwd = l.scopeCwd()
+	}
+	ls := l.newLive(item.ID, item.Title, cwd)
 	ls.updated = item.Updated
 	l.mu.Unlock()
 
 	var history []session.HistoryItem
 	if kind == "claude" {
-		history = session.ClaudeHistory(cwd, item.ID)
+		var offset int64
+		history, offset = session.ClaudeHistory(cwd, item.ID)
+		l.mu.Lock()
+		ls.tail, ls.tailing = offset, true
+		l.mu.Unlock()
 	} else {
 		history = session.CodexHistory(item.ID)
 	}
@@ -420,4 +615,46 @@ func (l *Launcher) findLive(item SessionItem) *liveSession {
 		}
 	}
 	return nil
+}
+
+// CopyResumeCommand puts the command that continues a session in a terminal
+// on the clipboard, e.g. cd ~/code/app && claude --resume <id>. Claude Code
+// finds a session only from the folder it ran in, hence the cd.
+func (l *Launcher) CopyResumeCommand(item SessionItem) error {
+	l.mu.Lock()
+	id, cwd, kind := item.ID, item.Cwd, l.cfg.Agent
+	if ls := l.findLive(item); ls != nil {
+		id, cwd, kind = cmp.Or(id, ls.id), ls.cwd, ls.kind
+	}
+	l.mu.Unlock()
+
+	var command string
+	switch {
+	case id == "":
+		return errors.New("this session has no ID yet; send a message first")
+	case kind == "codex":
+		command = "codex resume " + id
+	case kind == "claude":
+		command = "claude --resume " + id
+		if cwd != "" {
+			command = "cd " + shellQuote(cwd) + " && " + command
+		}
+	default:
+		return errors.New("this agent's sessions can't be resumed")
+	}
+	if !l.app.Clipboard.SetText(command) {
+		return errors.New("couldn't copy to the clipboard")
+	}
+	return nil
+}
+
+// shellQuote quotes a path for the system shell when it needs it.
+func shellQuote(s string) string {
+	if !strings.ContainsAny(s, " '\"$`\\!&;|<>()*?[]{}#~") {
+		return s
+	}
+	if runtime.GOOS == "windows" {
+		return `"` + s + `"`
+	}
+	return "'" + strings.ReplaceAll(s, "'", `'\''`) + "'"
 }

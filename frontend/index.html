@@ -18,7 +18,7 @@
             </div>
 
             <form id="composer" autocomplete="off">
-                <textarea id="input" rows="1" placeholder="Ask AI, or type / for commands" spellcheck="false" autofocus></textarea>
+                <textarea id="input" rows="1" placeholder="Ask AI" spellcheck="false" autofocus></textarea>
                 <button id="send" class="send-button" type="submit" title="Send (Enter)" aria-label="Send" disabled>
                     <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 19V5M6 11l6-6 6 6"/></svg>
                 </button>
@@ -26,42 +26,87 @@
         </section>
 
         <div id="dock">
+            <!-- Two rows: All and the folders, then the sessions of the
+                 selected one. -->
             <div id="tray">
-                <button id="new" class="icon-button" type="button" title="New session (⌘N)" aria-label="New session">
-                    <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg>
-                </button>
-                <div id="session-row" role="listbox" aria-label="Sessions"></div>
-                <button id="settings-button" class="icon-button" type="button" title="Settings" aria-label="Settings" aria-haspopup="dialog" aria-expanded="false">
-                    <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
-                </button>
+                <div class="tray-row">
+                    <button id="new" class="icon-button" type="button" data-tip="New session or folder" aria-label="New" aria-haspopup="menu" aria-expanded="false">
+                        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg>
+                    </button>
+                    <div id="folder-row" class="chip-row" role="tablist" aria-label="Folders"></div>
+                    <button id="settings-button" class="icon-button" type="button" data-tip="Settings" aria-label="Settings" aria-haspopup="dialog" aria-expanded="false">
+                        <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
+                    </button>
+                </div>
+                <div id="session-row" class="chip-row" role="listbox" aria-label="Sessions"></div>
             </div>
         </div>
     </div>
 </div>
 
-<!-- Top level so it layers above every card. -->
+<!-- Popovers, menus and the tooltip are top level so they layer above every
+     card. -->
 <div id="settings-pop" class="popover" role="dialog" aria-label="Settings" hidden>
     <div class="popover-scroll">
-        <section class="option-section">
-            <div class="section-title">Agent</div>
-            <div id="agent-list" class="option-list"></div>
-            <div class="custom-cmd">
-                <label for="custom-input">Custom command</label>
-                <input id="custom-input" type="text" spellcheck="false" autocomplete="off" placeholder="e.g. ollama run llama3">
-                <div class="custom-hint">Gets each message on stdin and replies on stdout. Enter to use it.</div>
-            </div>
+        <section class="expander" data-kind="agent">
+            <button class="expander-head" type="button" aria-expanded="false">
+                <svg class="chevron" viewBox="0 0 24 24" aria-hidden="true"><path d="M9 6l6 6-6 6"/></svg>
+                <span class="expander-title">Agent</span>
+                <span class="expander-value"></span>
+            </button>
+            <div class="expander-body"><div class="expander-inner">
+                <div id="agent-list" class="option-list"></div>
+            </div></div>
         </section>
-        <section class="option-section">
-            <div class="section-title">Model</div>
-            <div id="model-list" class="option-list"></div>
+        <section class="expander" data-kind="model">
+            <button class="expander-head" type="button" aria-expanded="false">
+                <svg class="chevron" viewBox="0 0 24 24" aria-hidden="true"><path d="M9 6l6 6-6 6"/></svg>
+                <span class="expander-title">Model</span>
+                <span class="expander-value"></span>
+            </button>
+            <div class="expander-body"><div class="expander-inner">
+                <div id="model-list" class="option-list"></div>
+            </div></div>
         </section>
-        <section class="option-section">
-            <div class="section-title">Effort</div>
-            <div id="effort-list" class="option-list"></div>
+        <section class="expander" data-kind="effort">
+            <button class="expander-head" type="button" aria-expanded="false">
+                <svg class="chevron" viewBox="0 0 24 24" aria-hidden="true"><path d="M9 6l6 6-6 6"/></svg>
+                <span class="expander-title">Effort</span>
+                <span class="expander-value"></span>
+            </button>
+            <div class="expander-body"><div class="expander-inner">
+                <div id="effort-list" class="option-list"></div>
+            </div></div>
         </section>
     </div>
 </div>
 
+<div id="new-menu" class="popover menu-pop" role="menu" aria-label="New" hidden>
+    <div class="popover-scroll">
+        <button class="menu-item" type="button" role="menuitem" data-action="session">
+            <span class="menu-label">New session</span><kbd class="shortcut" data-keys="mod+N"></kbd>
+        </button>
+        <button class="menu-item" type="button" role="menuitem" data-action="folder">
+            <span class="menu-label">New folder…</span><kbd class="shortcut" data-keys="shift+mod+N"></kbd>
+        </button>
+    </div>
+</div>
+
+<div id="context-menu" class="popover menu-pop" role="menu" hidden>
+    <div class="popover-scroll"></div>
+</div>
+
+<div id="tip" role="tooltip" hidden></div>
+
+<script>
+    // The Wails runtime maximises the window on a double-click in a drag
+    // region. cmdcmd's window is a fixed stage, so swallow those first; this
+    // runs before the runtime (a module) adds its own listener.
+    window.addEventListener('dblclick', e => {
+        const style = getComputedStyle(e.target);
+        if (style.getPropertyValue('--wails-draggable').trim() === 'drag') e.stopImmediatePropagation();
+    }, {capture: true});
+</script>
 <script src="./src/main.js" type="module"></script>
 </body>
 </html>

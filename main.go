@@ -25,6 +25,8 @@ func init() {
 	application.RegisterEvent[application.Void]("sessions:changed")
 	application.RegisterEvent[string]("notice")
 	application.RegisterEvent[application.Void]("agents:changed")
+	application.RegisterEvent[application.Void]("folders:changed")
+	application.RegisterEvent[AppendedItems]("session:append")
 }
 
 func main() {
@@ -53,16 +55,17 @@ func main() {
 	})
 
 	window := app.Window.NewWithOptions(application.WebviewWindowOptions{
-		Name:            "main",
-		Title:           "cmdcmd",
-		Width:           windowWidth,
-		Height:          windowHeight,
-		Frameless:       true,
-		DisableResize:   true,
-		Hidden:          true,
-		AlwaysOnTop:     true,
-		HideOnFocusLost: true,
-		// Esc is handled in JS: it closes the slash menu first, then hides.
+		Name:          "main",
+		Title:         "cmdcmd",
+		Width:         windowWidth,
+		Height:        windowHeight,
+		Frameless:     true,
+		DisableResize: true,
+		Hidden:        true,
+		AlwaysOnTop:   true,
+		// Hiding on focus loss is set up in Launcher.attach, so dialogs
+		// don't hide the window. Esc is handled in JS: it closes the slash
+		// menu first, then hides.
 		BackgroundType: application.BackgroundTypeTransparent,
 		URL:            "/",
 		Mac: application.MacWindow{

@@ -104,11 +104,29 @@ function addTool(v, tool, text) {
     });
 }
 
+// While a turn runs, "Thinking…" shows how long it has been going.
+function elapsed(ms) {
+    const s = Math.max(0, Math.floor(ms / 1000));
+    return s < 60 ? `${s}s` : `${Math.floor(s / 60)}m ${String(s % 60).padStart(2, '0')}s`;
+}
+
+function tickThinking(v) {
+    if (v.thinking && v.turnStart) v.thinking.lastChild.textContent = elapsed(Date.now() - v.turnStart);
+}
+
+setInterval(() => views.forEach(tickThinking), 1000);
+
 function setThinking(v, on) {
     if (on && !v.thinking) {
         v.thinking = document.createElement('div');
         v.thinking.className = 'thinking';
-        v.thinking.textContent = 'Thinking…';
+        const label = document.createElement('span');
+        label.className = 'thinking-label';
+        label.textContent = 'Thinking…';
+        const time = document.createElement('span');
+        time.className = 'thinking-time';
+        v.thinking.append(label, time);
+        tickThinking(v);
         v.el.appendChild(v.thinking);
         v.el.scrollTop = v.el.scrollHeight;
     } else if (!on && v.thinking) {
@@ -133,7 +151,13 @@ function renderCurrent(v) {
 
 // setBusy adjusts the count of turns in flight; null resets it.
 function setBusy(v, delta) {
+    const before = v.pending;
     v.pending = delta === null ? 0 : Math.max(0, v.pending + delta);
+    if (before === 0 && v.pending > 0) v.turnStart = Date.now();
+    if (v.pending === 0) {
+        v.turnStart = null;
+        v.outside = false;
+    }
     if (v === view) sendButton.classList.toggle('busy', v.pending > 0);
     setThinking(v, v.pending > 0 && !v.current);
 }
@@ -353,6 +377,17 @@ function accept(i, runIfComplete) {
 
 // ---------- keyboard ----------
 
+// ⌘ on macOS, Ctrl elsewhere.
+const isMac = /Mac/.test(navigator.platform);
+const hasMod = e => (isMac ? e.metaKey : e.ctrlKey);
+
+for (const kbd of document.querySelectorAll('kbd[data-keys]')) {
+    kbd.textContent = kbd.dataset.keys.split('+').map(k => ({
+        mod: isMac ? '⌘' : 'Ctrl+',
+        shift: isMac ? '⇧' : 'Shift+',
+    })[k] ?? k).join('');
+}
+
 input.addEventListener('input', onInput);
 
 document.getElementById('composer').addEventListener('submit', e => {
@@ -360,21 +395,21 @@ document.getElementById('composer').addEventListener('submit', e => {
     send();
 });
 
-document.getElementById('new').addEventListener('click', () => Launcher.NewSession());
-
 document.addEventListener('keydown', e => {
     const menuOpen = !menu.hidden && menuItems.length > 0;
 
     if (e.key === 'Escape') {
         e.preventDefault();
-        if (settingsOpen) closeSettings();
+        if (openPop) closePop();
         else if (!menu.hidden) setInput('');
         else Launcher.Hide();
         return;
     }
-    if (e.metaKey && e.key.toLowerCase() === 'n') {
+    if (hasMod(e) && !e.altKey && e.key.toLowerCase() === 'n') {
         e.preventDefault();
-        Launcher.NewSession();
+        closePop();
+        if (e.shiftKey) newFolder();
+        else newSession();
         return;
     }
     if (e.metaKey && e.key.toLowerCase() === 'q') {
@@ -393,7 +428,8 @@ document.addEventListener('keydown', e => {
         accept(selected, false);
         return;
     }
-    if (e.key === 'Tab' && !settingsOpen && !e.metaKey && !e.ctrlKey && !e.altKey) {
+    // Tab and Shift+Tab step through the sessions, never the folders.
+    if (e.key === 'Tab' && !openPop && !e.metaKey && !e.ctrlKey && !e.altKey) {
         e.preventDefault();
         stepSession(e.shiftKey ? -1 : 1);
         return;
@@ -410,7 +446,7 @@ document.addEventListener('keydown', e => {
     const inField = document.activeElement?.matches('input, textarea');
     if (printable && !inField) {
         e.preventDefault();
-        closeSettings();
+        closePop();
         input.focus();
         const end = input.value.length;
         input.setRangeText(e.key, end, end, 'end');
@@ -418,23 +454,216 @@ document.addEventListener('keydown', e => {
     }
 });
 
+// ---------- popovers ----------
+
+// One popover is open at a time: settings, the New menu or a context menu.
+// Each is placed next to its anchor on whichever side (above or below) has
+// more room, and kept inside the window. It closes on Esc, a click
+// elsewhere, or its button.
+let openPop = null; // {el, button}
+
+// anchor is a DOMRect; align is 'left' or 'right' (which anchor edge the
+// popover lines up with).
+function placePop(el, anchor, align) {
+    const gap = 8, edge = 40; // edge leaves room for the popover's shadow
+    const width = el.offsetWidth;
+    const above = anchor.top - gap - edge;
+    const below = window.innerHeight - anchor.bottom - gap - edge;
+    const up = above >= below;
+    const x = align === 'right' ? anchor.right - width : anchor.left;
+
+    el.classList.toggle('up', up);
+    el.classList.toggle('down', !up);
+    el.classList.toggle('from-left', align === 'left');
+    el.style.left = Math.min(Math.max(edge, x), window.innerWidth - width - edge) + 'px';
+    el.style.top = up ? 'auto' : anchor.bottom + gap + 'px';
+    el.style.bottom = up ? window.innerHeight - anchor.top + gap + 'px' : 'auto';
+    el.querySelector('.popover-scroll').style.maxHeight = Math.min(520, up ? above : below) + 'px';
+}
+
+function showPop(el, anchor, align, button = null) {
+    if (openPop?.el !== el) closePop(false);
+    openPop = {el, button, anchor, align};
+    hideTip();
+    el.classList.remove('closing');
+    button?.setAttribute('aria-expanded', 'true');
+    el.hidden = false;
+    placePop(el, anchor, align);
+}
+
+function repositionPop() {
+    if (openPop) placePop(openPop.el, openPop.button?.getBoundingClientRect() ?? openPop.anchor, openPop.align);
+}
+
+// closePop fades the open popover out, then hides it.
+function closePop(refocus = true) {
+    if (!openPop) return;
+    const {el, button} = openPop;
+    openPop = null;
+    button?.setAttribute('aria-expanded', 'false');
+    el.classList.add('closing');
+    el.addEventListener('animationend', () => {
+        if (openPop?.el !== el) el.hidden = true;
+        el.classList.remove('closing');
+    }, {once: true});
+    if (refocus) input.focus();
+}
+
+function togglePop(el, button, align, before) {
+    if (openPop?.el === el) {
+        closePop();
+        return;
+    }
+    before?.();
+    showPop(el, button.getBoundingClientRect(), align, button);
+}
+
+window.addEventListener('resize', repositionPop);
+
+// ---------- tooltip ----------
+
+// Hovering a button, folder or session shows a tooltip after a short delay:
+// a [data-tip] attribute, or lines from tipLines for folders and sessions.
+const tip = document.getElementById('tip');
+let tipTarget = null;
+let tipTimer = 0;
+
+function tipFor(el) {
+    if (el.dataset.tip) {
+        const keys = el.dataset.tipKeys;
+        return [el.dataset.tip + (keys ? `  ${keys}` : '')];
+    }
+    return el._tip?.() ?? null;
+}
+
+function showTip(el) {
+    const lines = tipFor(el);
+    if (!lines?.length || openPop || el.classList.contains('dragging')) return;
+    tip.replaceChildren(...lines.filter(Boolean).map((line, i) => {
+        const div = document.createElement('div');
+        div.className = i === 0 ? 'tip-title' : 'tip-line';
+        div.textContent = line;
+        return div;
+    }));
+    tip.hidden = false;
+    const r = el.getBoundingClientRect();
+    const gap = 8;
+    const width = tip.offsetWidth, height = tip.offsetHeight;
+    const below = r.bottom + gap + height < window.innerHeight - 8;
+    tip.style.left = Math.min(Math.max(8, r.left + r.width / 2 - width / 2), window.innerWidth - width - 8) + 'px';
+    tip.style.top = (below ? r.bottom + gap : r.top - gap - height) + 'px';
+}
+
+function hideTip() {
+    clearTimeout(tipTimer);
+    tipTarget = null;
+    tip.hidden = true;
+}
+
+document.addEventListener('mouseover', e => {
+    const el = e.target.closest('[data-tip], .chip');
+    if (el === tipTarget) return;
+    hideTip();
+    if (!el) return;
+    tipTarget = el;
+    tipTimer = setTimeout(() => showTip(el), 450);
+});
+document.addEventListener('mousedown', hideTip, true);
+document.addEventListener('wheel', hideTip, true);
+
+// ---------- New menu ----------
+
+const newButton = document.getElementById('new');
+const newMenu = document.getElementById('new-menu');
+
+function newSession() {
+    Launcher.NewSession();
+    input.focus();
+}
+
+async function newFolder() {
+    try {
+        await Launcher.AddFolder();
+    } catch (err) {
+        if (view) addText(view, 'system error', String(err));
+    }
+    input.focus();
+}
+
+newButton.addEventListener('click', () => togglePop(newMenu, newButton, 'left'));
+newMenu.addEventListener('click', e => {
+    const item = e.target.closest('.menu-item');
+    if (!item) return;
+    closePop();
+    if (item.dataset.action === 'folder') newFolder();
+    else newSession();
+});
+
+// ---------- context menu ----------
+
+const contextMenu = document.getElementById('context-menu');
+
+// items: {label, detail, danger, disabled, confirm, run}. An item with
+// confirm asks again in place before it runs.
+function showContextMenu(e, items) {
+    e.preventDefault();
+    const list = contextMenu.querySelector('.popover-scroll');
+    list.replaceChildren(...items.map(it => {
+        const b = document.createElement('button');
+        b.type = 'button';
+        b.className = 'menu-item' + (it.danger ? ' danger' : '');
+        b.setAttribute('role', 'menuitem');
+        b.disabled = !!it.disabled;
+        const label = document.createElement('span');
+        label.className = 'menu-label';
+        label.textContent = it.label;
+        b.appendChild(label);
+        if (it.detail) {
+            const detail = document.createElement('span');
+            detail.className = 'menu-detail';
+            detail.textContent = it.detail;
+            b.appendChild(detail);
+        }
+        b.addEventListener('click', () => {
+            if (it.confirm && !b.classList.contains('confirming')) {
+                b.classList.add('confirming');
+                label.textContent = it.confirm;
+                return;
+            }
+            closePop();
+            it.run();
+        });
+        return b;
+    }));
+    const point = new DOMRect(e.clientX, e.clientY, 0, 0);
+    showPop(contextMenu, point, 'left');
+}
+
 // ---------- settings: agent, model, effort ----------
 
-// The gear in the tray opens one popover with the agent, model and effort
-// choices. Choosing an option keeps it open; it closes on Esc, a click
-// elsewhere, or the gear.
+// The gear in the tray opens a popover with one expandable section each for
+// the agent, model and effort; a section's header shows the current choice.
+// Choosing an option keeps the popover open.
 const settingsPop = document.getElementById('settings-pop');
 const settingsButton = document.getElementById('settings-button');
-const settingsLists = {
-    agent: document.getElementById('agent-list'),
-    model: document.getElementById('model-list'),
-    effort: document.getElementById('effort-list'),
-};
+const sections = Object.fromEntries([...settingsPop.querySelectorAll('.expander')].map(el => [el.dataset.kind, el]));
 const effortNames = {minimal: 'Minimal', low: 'Low', medium: 'Medium', high: 'High', xhigh: 'Extra high', max: 'Max', ultra: 'Ultra'};
 
 let agents = [];
 let selection = {agent: 'claude', model: '', effort: ''};
-let settingsOpen = false;
+
+for (const section of Object.values(sections)) {
+    const head = section.querySelector('.expander-head');
+    head.addEventListener('click', () => {
+        // One section is open at a time.
+        const open = head.getAttribute('aria-expanded') !== 'true';
+        for (const other of Object.values(sections)) {
+            const on = other === section && open;
+            other.querySelector('.expander-head').setAttribute('aria-expanded', String(on));
+            other.classList.toggle('open', on);
+        }
+    });
+}
 
 function currentAgent() {
     return agents.find(a => a.id === selection.agent);
@@ -445,11 +674,16 @@ function currentModel() {
     return models.find(m => m.value === selection.model) ?? models.find(m => m.value === 'default') ?? models[0];
 }
 
+function modelName(m) {
+    return m?.label.replace(/\s*\(.*\)$/, '') ?? '';
+}
+
 // options returns the rows for one section: {label, description, active,
 // disabled, pick}.
 function options(kind) {
     if (kind === 'agent') {
-        return agents.map(a => ({
+        // The custom agent is set up in the config file only.
+        return agents.filter(a => a.id !== 'custom').map(a => ({
             label: a.name,
             description: a.available ? (a.command ?? '') : a.reason,
             active: a.id === selection.agent,
@@ -461,7 +695,8 @@ function options(kind) {
         const model = currentModel();
         return (currentAgent()?.models ?? []).map(m => ({
             label: m.label,
-            description: m.description,
+            // Only Default explains itself; the rest are just names.
+            description: m.value === 'default' ? m.description : '',
             active: m === model,
             pick: () => {
                 // Keep the effort only if the new model supports it.
@@ -480,22 +715,23 @@ function options(kind) {
     }));
 }
 
-// renderSettings updates the gear's tooltip and, while open, the popover.
-function renderSettings() {
-    const model = currentModel();
-    settingsButton.title = [
-        currentAgent()?.name ?? 'Claude',
-        model?.label.replace(/\s*\(.*\)$/, ''),
-        selection.effort ? (effortNames[selection.effort] ?? selection.effort) + ' effort' : '',
-    ].filter(Boolean).join(' · ');
-    if (!settingsOpen) return;
+// renderSettings updates the gear's tooltip and, while open (or when force
+// is set), the popover.
+function renderSettings(force = false) {
+    const values = {
+        agent: currentAgent()?.name ?? 'Claude',
+        model: modelName(currentModel()),
+        effort: selection.effort ? (effortNames[selection.effort] ?? selection.effort) : 'Auto',
+    };
+    settingsButton.dataset.tip = ['Settings', values.agent, values.model,
+        currentModel()?.efforts?.length ? values.effort + ' effort' : ''].filter(Boolean).join(' · ');
+    if (!force && openPop?.el !== settingsPop) return;
 
-    const custom = agents.find(a => a.id === 'custom');
-    if (document.activeElement !== customInput) customInput.value = custom?.command ?? '';
-    for (const [kind, list] of Object.entries(settingsLists)) {
+    for (const [kind, section] of Object.entries(sections)) {
         const rows = options(kind);
-        list.parentElement.hidden = rows.length === 0;
-        list.replaceChildren(...rows.map(optionButton));
+        section.hidden = kind !== 'agent' && rows.length === 0;
+        section.querySelector('.expander-value').textContent = values[kind];
+        section.querySelector('.option-list').replaceChildren(...rows.map(optionButton));
     }
 }
 
@@ -546,88 +782,21 @@ function timeAgo(iso) {
 async function loadAgents() {
     [agents, selection] = await Promise.all([Launcher.GetAgents(), Launcher.GetSelection()]);
     renderSettings();
+    repositionPop();
 }
 
-// Place the popover beside the gear, on whichever side (above or below) has
-// more room, and keep it inside the window.
-function positionSettings() {
-    if (!settingsOpen) return;
-    const gap = 10, edge = 40; // edge leaves room for the popover's shadow
-    const button = settingsButton.getBoundingClientRect();
-    const width = settingsPop.offsetWidth;
-    const above = button.top - gap - edge;
-    const below = window.innerHeight - button.bottom - gap - edge;
-    const up = above >= below;
-
-    settingsPop.classList.toggle('up', up);
-    settingsPop.classList.toggle('down', !up);
-    settingsPop.style.left = Math.min(Math.max(edge, button.right - width), window.innerWidth - width - edge) + 'px';
-    settingsPop.style.top = up ? 'auto' : button.bottom + gap + 'px';
-    settingsPop.style.bottom = up ? window.innerHeight - button.top + gap + 'px' : 'auto';
-    settingsPop.querySelector('.popover-scroll').style.maxHeight = Math.min(520, up ? above : below) + 'px';
-}
-
-async function openSettings() {
-    settingsOpen = true;
-    settingsPop.classList.remove('closing');
-    settingsButton.setAttribute('aria-expanded', 'true');
-    renderSettings();
-    settingsPop.hidden = false;
-    positionSettings();
-    await loadAgents();
-    positionSettings();
-}
-
-// closeSettings fades the popover out, then hides it.
-function closeSettings(refocus = true) {
-    if (!settingsOpen) return;
-    settingsOpen = false;
-    settingsButton.setAttribute('aria-expanded', 'false');
-    saveCustomCommand();
-    settingsPop.classList.add('closing');
-    settingsPop.addEventListener('animationend', () => {
-        if (!settingsOpen) settingsPop.hidden = true;
-        settingsPop.classList.remove('closing');
-    }, {once: true});
-    if (refocus) input.focus();
-}
-
-// ---------- custom agent command ----------
-
-const customInput = document.getElementById('custom-input');
-
-async function saveCustomCommand() {
-    const command = customInput.value.trim();
-    const custom = agents.find(a => a.id === 'custom');
-    if (!custom || command === (custom.command ?? '')) return;
-    try {
-        await Launcher.SetCustomCommand(command);
-    } catch (err) {
-        if (view) addText(view, 'system error', String(err));
-    }
-    await loadAgents();
-}
-
-customInput.addEventListener('keydown', async e => {
-    if (e.key !== 'Enter') return;
-    e.preventDefault();
-    e.stopPropagation();
-    await saveCustomCommand();
-    if (customInput.value.trim() && selection.agent !== 'custom') {
-        choose({agent: 'custom', model: '', effort: ''});
-    }
-});
-customInput.addEventListener('blur', saveCustomCommand);
-
-settingsButton.addEventListener('click', () => (settingsOpen ? closeSettings() : openSettings()));
-window.addEventListener('resize', positionSettings);
+settingsButton.addEventListener('click', () => togglePop(settingsPop, settingsButton, 'right', () => {
+    // Render before showing so the popover is measured at its real size.
+    renderSettings(true);
+    loadAgents();
+}));
 Events.On('agents:changed', loadAgents);
 
 // Clicks on the empty stage around the cards act like clicking outside the
-// window: close the settings, or hide.
+// window: close the open popover, or hide.
 stage.addEventListener('mousedown', e => {
-    if (settingsOpen && !e.target.closest('#settings-button, #settings-pop')) {
-        closeSettings();
+    if (openPop && !openPop.el.contains(e.target) && !openPop.button?.contains(e.target)) {
+        closePop();
         return;
     }
     // The window card's padding is invisible while collapsed, so it counts as
@@ -643,13 +812,17 @@ stage.addEventListener('mousedown', e => {
 Events.On('window:shown', () => {
     input.focus();
     input.select();
+    // Claude Code may have changed sessions while the window was hidden.
+    loadSessions();
+    loadFolders();
 });
 
-// ---------- sessions ----------
+// ---------- folders ----------
 
-// The tray shows every session in a row that scrolls sideways, between the
-// New and settings buttons. The symbol before each name shows its status;
-// Tab and Shift+Tab step through them.
+// The tray's first row holds All and the folders, between the New and
+// settings buttons; the second row holds the sessions of the selected one.
+// Folders can be dragged to reorder them (pinned ones stay first).
+const folderRow = document.getElementById('folder-row');
 const sessionRow = document.getElementById('session-row');
 const statusNames = {
     idle: 'Idle',
@@ -657,8 +830,163 @@ const statusNames = {
     waiting: 'Finished, waiting for you',
     error: 'Stopped with an error',
 };
+const folderStatusNames = {
+    idle: 'No sessions running',
+    running: 'A session is running',
+    waiting: 'A reply is waiting for you',
+    error: 'A session stopped with an error',
+};
+const maxFolderName = 24;
+const maxSessionName = 36;
+const maxTitle = 100; // matches the backend's limit
 
-let sessions = {current: '', sessions: []};
+let folders = {selected: '', cwd: '', home: '', allStatus: 'idle', folders: []};
+
+function clip(text, max) {
+    return text.length > max ? text.slice(0, max - 1).trimEnd() + '…' : text;
+}
+
+// tildePath shortens a path in the home folder to ~/….
+function tildePath(path) {
+    const home = folders.home;
+    if (!home || !path) return path ?? '';
+    if (path === home) return '~';
+    return path.startsWith(home + '/') || path.startsWith(home + '\\') ? '~' + path.slice(home.length) : path;
+}
+
+// chip builds a pill for the folder or session rows.
+function chip(className, label, status, max, tipLines) {
+    const b = document.createElement('button');
+    b.type = 'button';
+    b.className = 'chip ' + className;
+    b.dataset.status = status;
+    const dot = document.createElement('span');
+    dot.className = 'status';
+    const name = document.createElement('span');
+    name.className = 'chip-name';
+    name.textContent = clip(label, max);
+    b.append(dot, name);
+    b._tip = tipLines;
+    return b;
+}
+
+async function loadFolders() {
+    folders = await Launcher.GetFolders();
+    renderFolders();
+    updatePlaceholder();
+}
+
+function renderFolders() {
+    const all = chip('folder all' + (folders.selected === '' ? ' active' : ''), 'All', folders.allStatus, maxFolderName,
+        () => ['All folders', `New sessions start in ${tildePath(folders.cwd)}`, folderStatusNames[folders.allStatus]]);
+    all.setAttribute('role', 'tab');
+    all.addEventListener('click', () => selectFolder(''));
+
+    folderRow.replaceChildren(all, ...folders.folders.map(f => {
+        const b = chip('folder' + (f.path === folders.selected ? ' active' : '') + (f.exists ? '' : ' missing'),
+            f.name, f.status, maxFolderName,
+            () => [f.name, tildePath(f.path), f.exists ? folderStatusNames[f.status] : 'Folder not found', f.pinned ? 'Pinned' : '']);
+        b.setAttribute('role', 'tab');
+        b.dataset.path = f.path;
+        b.dataset.pinned = f.pinned;
+        if (f.pinned) b.prepend(pinIcon());
+        b.addEventListener('click', () => {
+            if (!b.dataset.dragged) selectFolder(f.path);
+        });
+        b.addEventListener('contextmenu', e => showContextMenu(e, [
+            {label: isMac ? 'Open in Finder' : 'Open in Explorer', disabled: !f.exists, run: () => Launcher.OpenFolder(f.path)},
+            {label: f.pinned ? 'Unpin folder' : 'Pin folder', run: () => Launcher.PinFolder(f.path, !f.pinned)},
+            {label: 'Delete folder', detail: 'Removes it from cmdcmd; files stay on disk', danger: true,
+                confirm: 'Click again to delete',
+                run: () => Launcher.RemoveFolder(f.path)},
+        ]));
+        b.addEventListener('pointerdown', e => startFolderDrag(e, b));
+        return b;
+    }));
+    folderRow.querySelector('.active')?.scrollIntoView({inline: 'nearest', block: 'nearest'});
+}
+
+function pinIcon() {
+    const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+    svg.setAttribute('viewBox', '0 0 24 24');
+    svg.classList.add('pin');
+    svg.innerHTML = '<path d="M9 4h6l-1 6 3 3v2H7v-2l3-3-1-6zM12 15v5"/>';
+    return svg;
+}
+
+function selectFolder(path) {
+    if (path === folders.selected) return;
+    folders.selected = path;
+    for (const el of folderRow.children) el.classList.toggle('active', (el.dataset.path ?? '') === path);
+    Launcher.SelectFolder(path);
+    input.focus();
+}
+
+// startFolderDrag lets a folder be dragged sideways to a new place among the
+// folders with the same pinned state. A press that barely moves is a click.
+function startFolderDrag(e, el) {
+    if (e.button !== 0) return;
+    const startX = e.clientX;
+    const grab = e.clientX - el.getBoundingClientRect().left;
+    let dragging = false;
+    delete el.dataset.dragged;
+
+    const peers = () => [...folderRow.querySelectorAll('.folder:not(.all)')]
+        .filter(p => p !== el && p.dataset.pinned === el.dataset.pinned);
+
+    const move = ev => {
+        if (!dragging) {
+            if (Math.abs(ev.clientX - startX) < 5) return;
+            dragging = true;
+            el.dataset.dragged = '1';
+            el.classList.add('dragging');
+            el.setPointerCapture(ev.pointerId);
+            hideTip();
+        }
+        // Move the folder before the first peer whose middle is right of
+        // the pointer, or after the last one.
+        const group = peers();
+        const before = group.find(p => {
+            const r = p.getBoundingClientRect();
+            return ev.clientX < r.left + r.width / 2;
+        });
+        if (before && before !== el.nextElementSibling) before.before(el);
+        else if (!before && group.length && group[group.length - 1].nextElementSibling !== el) group[group.length - 1].after(el);
+
+        el.style.transform = '';
+        const left = el.getBoundingClientRect().left;
+        el.style.transform = `translateX(${ev.clientX - grab - left}px)`;
+    };
+    const up = () => {
+        window.removeEventListener('pointermove', move);
+        window.removeEventListener('pointerup', up);
+        window.removeEventListener('pointercancel', up);
+        if (!dragging) return;
+        el.classList.remove('dragging');
+        el.style.transform = '';
+        // Let the click that ends the drag pass before allowing clicks again.
+        setTimeout(() => delete el.dataset.dragged, 0);
+        const order = [...folderRow.querySelectorAll('.folder:not(.all)')].map(f => f.dataset.path);
+        Launcher.ReorderFolders(order);
+    };
+    window.addEventListener('pointermove', move);
+    window.addEventListener('pointerup', up);
+    window.addEventListener('pointercancel', up);
+}
+
+// The placeholder shows the path the session on screen runs in.
+function updatePlaceholder() {
+    const cwd = sessions.currentCwd || folders.selected || folders.cwd;
+    input.placeholder = cwd ? `Ask AI in ${tildePath(cwd)}` : 'Ask AI';
+}
+
+Events.On('folders:changed', loadFolders);
+
+// ---------- sessions ----------
+
+// The symbol before each session's name shows its status; Tab and
+// Shift+Tab step through them.
+let sessions = {current: '', currentCwd: '', sessions: []};
 let activeIndex = -1; // the session on screen, or the one Tab last stepped to
 
 async function loadSessions() {
@@ -666,22 +994,45 @@ async function loadSessions() {
     dropViews(new Set(sessions.sessions.map(s => s.key).filter(Boolean)));
     activeIndex = sessions.sessions.findIndex(s => s.key === sessions.current);
     renderSessions();
+    updatePlaceholder();
+    showOutsideTurn();
+}
+
+// A turn run from Claude Code on the session on screen shows as thinking
+// too, timed from when cmdcmd noticed it.
+function showOutsideTurn() {
+    const v = views.get(sessions.current);
+    if (!v || v.pending > 0) return;
+    const running = sessions.sessions.find(s => s.key === sessions.current)?.status === 'running';
+    if (running && !v.outside) {
+        v.outside = true;
+        v.turnStart = Date.now();
+        setThinking(v, true);
+    } else if (!running && v.outside) {
+        v.outside = false;
+        v.turnStart = null;
+        setThinking(v, false);
+    }
 }
 
 function renderSessions() {
+    if (sessionRow.querySelector('.chip-rename')) return; // don't pull the field away mid-rename
     sessionRow.replaceChildren(...sessions.sessions.map((s, i) => {
-        const b = document.createElement('button');
-        b.type = 'button';
-        b.className = 'session' + (i === activeIndex ? ' active' : '');
-        b.dataset.status = s.status;
-        b.title = `${s.title || 'New session'}\n${statusNames[s.status] ?? ''} · ${timeAgo(s.updated)}`;
-        const status = document.createElement('span');
-        status.className = 'status';
-        const name = document.createElement('span');
-        name.className = 'session-name';
-        name.textContent = s.title || 'New session';
-        b.append(status, name);
+        const title = s.title || 'New session';
+        const b = chip('session' + (i === activeIndex ? ' active' : ''), title, s.status, maxSessionName,
+            () => [title, tildePath(s.cwd), `${statusNames[s.status] ?? ''} · ${timeAgo(s.updated)}`, s.pinned ? 'Pinned' : '']);
+        b.setAttribute('role', 'option');
+        if (s.pinned) b.prepend(pinIcon());
         b.addEventListener('click', () => openSession(i));
+        b.addEventListener('contextmenu', e => showContextMenu(e, [
+            {label: 'Rename…', run: () => renameSession(b, s, title)},
+            {label: 'Copy resume command', disabled: !s.id, detail: s.id ? '' : 'Send a message first',
+                run: () => Launcher.CopyResumeCommand(s).catch(err => view && addText(view, 'system error', String(err)))},
+            {label: s.pinned ? 'Unpin session' : 'Pin session', disabled: !s.id,
+                detail: s.id ? '' : 'Send a message first', run: () => Launcher.PinSession(s, !s.pinned)},
+            {label: 'Delete session', confirm: 'Click again to delete', danger: true,
+                run: () => Launcher.DeleteSession(s).catch(err => view && addText(view, 'system error', String(err)))},
+        ]));
         return b;
     }));
     if (sessions.sessions.length === 0) {
@@ -691,6 +1042,38 @@ function renderSessions() {
         sessionRow.appendChild(empty);
     }
     sessionRow.children[activeIndex]?.scrollIntoView({inline: 'nearest', block: 'nearest'});
+}
+
+// renameSession swaps the chip for a text field; Enter or leaving it saves,
+// Esc cancels.
+function renameSession(b, s, title) {
+    const field = document.createElement('input');
+    field.type = 'text';
+    field.className = 'chip-rename';
+    field.value = title;
+    field.maxLength = maxTitle;
+    field.spellcheck = false;
+    b.replaceWith(field);
+    field.focus();
+    field.select();
+    let done = false;
+    const finish = save => {
+        if (done) return;
+        done = true;
+        const name = field.value.trim();
+        field.replaceWith(b);
+        input.focus();
+        if (save && name && name !== title) {
+            b.querySelector('.chip-name').textContent = clip(name, maxSessionName);
+            Launcher.RenameSession(s, name).catch(err => view && addText(view, 'system error', String(err)));
+        }
+    };
+    field.addEventListener('keydown', e => {
+        e.stopPropagation(); // keep Esc, Tab and typing out of the window's shortcuts
+        if (e.key === 'Enter') finish(true);
+        else if (e.key === 'Escape') finish(false);
+    });
+    field.addEventListener('blur', () => finish(true));
 }
 
 function openSession(i) {
@@ -709,14 +1092,20 @@ function stepSession(dir) {
     openSession(activeIndex < 0 ? 0 : (activeIndex + dir + n) % n);
 }
 
-// A vertical wheel scrolls the row sideways.
-sessionRow.addEventListener('wheel', e => {
-    if (Math.abs(e.deltaY) <= Math.abs(e.deltaX)) return;
-    e.preventDefault();
-    sessionRow.scrollLeft += e.deltaY;
-}, {passive: false});
+// A vertical wheel scrolls the rows sideways.
+for (const row of [folderRow, sessionRow]) {
+    row.addEventListener('wheel', e => {
+        if (Math.abs(e.deltaY) <= Math.abs(e.deltaX)) return;
+        e.preventDefault();
+        row.scrollLeft += e.deltaY;
+    }, {passive: false});
+}
 
-Events.On('sessions:changed', loadSessions);
+// Session statuses roll up into the folders, so both reload together.
+Events.On('sessions:changed', () => {
+    loadSessions();
+    loadFolders();
+});
 
 // A session came on screen: a new one, a live one we already hold, or one
 // resumed from disk with its earlier messages.
@@ -733,6 +1122,18 @@ Events.On('session:open', ({data}) => {
     }
     showView(data.key);
     input.focus();
+});
+
+// Another client (Claude Code in a terminal) added messages to a session.
+Events.On('session:append', ({data}) => {
+    const v = views.get(data.key);
+    if (!v) return;
+    v.current = null;
+    for (const it of data.items) {
+        if (it.role === 'user') addText(v, 'user', it.text);
+        else if (it.role === 'assistant') addMarkdown(v, it.text);
+        else addTool(v, it.tool, it.text);
+    }
 });
 
 function showNotice(text) {
@@ -754,6 +1155,7 @@ Launcher.GetCommands().then(list => {
 });
 
 loadAgents();
+loadFolders();
 loadSessions().then(() => showView(sessions.current));
 
 updateLayout();

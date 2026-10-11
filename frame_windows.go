@@ -16,9 +16,13 @@ var (
 
 const monitorDefaultToNearest = 2
 
-// placeWindow centers the window on the screen under the cursor.
-func placeWindow(app *application.App, window *application.WebviewWindow, width, height int) {
+// placeWindow centers the window on the screen under the cursor. Unless
+// recenter is set, a window already on that screen stays where it is.
+func placeWindow(app *application.App, window *application.WebviewWindow, width, height int, recenter bool) {
 	screen := app.Screen.GetByID(cursorScreenID())
+	if current, _ := window.GetScreen(); !recenter && screen != nil && current != nil && current.ID == screen.ID {
+		return
+	}
 	if screen == nil {
 		screen, _ = window.GetScreen()
 	}
@@ -46,4 +50,9 @@ func cursorScreenID() string {
 		return ""
 	}
 	return strconv.Itoa(int(hMonitor))
+}
+
+// snapWindow centers the window on its screen if it is close to centered.
+func snapWindow(window *application.WebviewWindow, threshold int) {
+	snapRelative(window, threshold)
 }

@@ -32,6 +32,34 @@ import * as session$0 from "./internal/session/models.js";
  */
 
 /**
+ * AppendedItems are messages another client added to a session.
+ * @typedef {Object} AppendedItems
+ * @property {string} key
+ * @property {session$0.HistoryItem[] | null} items
+ */
+
+/**
+ * FolderItem is one folder in the bar.
+ * @typedef {Object} FolderItem
+ * @property {string} path
+ * @property {string} name
+ * @property {boolean} pinned
+ * @property {boolean} exists
+ * @property {string} status - the most pressing status of its live sessions
+ */
+
+/**
+ * FolderList is the folders in the bar, pinned first, the selected one (""
+ * for All) and the configured cwd, where sessions under All start.
+ * @typedef {Object} FolderList
+ * @property {string} selected
+ * @property {string} cwd
+ * @property {string} home
+ * @property {string} allStatus
+ * @property {FolderItem[] | null} folders
+ */
+
+/**
  * Info describes the session for the UI.
  * @typedef {Object} Info
  * @property {string} shortcut
@@ -65,6 +93,8 @@ import * as session$0 from "./internal/session/models.js";
  * @property {string} title
  * @property {string} updated
  * @property {string} status
+ * @property {string} cwd
+ * @property {boolean} pinned
  */
 
 /**
@@ -72,6 +102,7 @@ import * as session$0 from "./internal/session/models.js";
  * the one on screen.
  * @typedef {Object} SessionList
  * @property {string} current
+ * @property {string} currentCwd - where the session on screen runs
  * @property {SessionItem[] | null} sessions
  */
 

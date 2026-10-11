@@ -12,6 +12,7 @@ import (
 	"cmdcmd/internal/session"
 
 	"github.com/wailsapp/wails/v3/pkg/application"
+	"github.com/wailsapp/wails/v3/pkg/events"
 )
 
 // The window is a fixed, transparent stage; the visible cards are drawn and
@@ -21,6 +22,9 @@ import (
 const (
 	windowWidth  = 880
 	windowHeight = 780
+	// A window dragged to within this many pixels of the center of its
+	// screen snaps back to it.
+	snapDistance = 40
 )
 
 // Launcher is bound to the frontend; its exported methods are callable from JS.
@@ -33,6 +37,10 @@ type Launcher struct {
 
 	mu           sync.Mutex
 	cfg          config.Config
+	state        config.State
+	dialogOpen   bool // a system dialog is up; losing focus to it doesn't hide the window
+	placed       bool // the window has been shown once; later it stays where it was moved
+	snapTimer    *time.Timer
 	live         []*liveSession // the session on screen and any running in the background
 	current      *liveSession
 	nextKey      int
@@ -48,12 +56,18 @@ func NewLauncher() *Launcher {
 		l.notice = "Could not read config: " + err.Error()
 	}
 	l.cfg = cfg
+	if l.state, err = config.LoadState(); err != nil {
+		l.notice = "Could not read state: " + err.Error()
+	}
+	if !l.state.HasFolder(l.state.Selected) {
+		l.state.Selected = ""
+	}
 	l.hotkey, err = hotkey.Parse(cfg.Hotkey)
 	if err != nil {
 		l.notice = err.Error() + "; using the default"
 		l.hotkey, _ = hotkey.Parse(hotkey.Default)
 	}
-	l.newLive("", "")
+	l.newLive("", "", l.scopeCwd())
 	return l
 }
 
@@ -67,7 +81,28 @@ func (l *Launcher) ShortcutLabel() string {
 func (l *Launcher) attach(app *application.App, window *application.WebviewWindow) {
 	l.app = app
 	l.window = window
+	// Like HideOnFocusLost, except while a dialog cmdcmd opened has focus.
+	window.OnWindowEvent(events.Common.WindowLostFocus, func(*application.WindowEvent) {
+		l.mu.Lock()
+		open := l.dialogOpen
+		l.mu.Unlock()
+		if !open {
+			window.Hide()
+		}
+	})
+	// Dragging empty space moves the window; once it rests near the center
+	// of its screen, snap it there so it can be put back exactly.
+	window.OnWindowEvent(events.Common.WindowDidMove, func(*application.WindowEvent) {
+		l.mu.Lock()
+		if l.snapTimer != nil {
+			l.snapTimer.Stop()
+		}
+		l.snapTimer = time.AfterFunc(250*time.Millisecond, func() { snapWindow(window, snapDistance) })
+		l.mu.Unlock()
+	})
 	l.startAgent()
+	go l.followTranscripts()
+	go l.watchSessions()
 	err := l.startHotkey()
 	// Folder prompts come after the Input Monitoring prompt so they queue up
 	// behind it instead of covering it.
@@ -177,7 +212,7 @@ func (l *Launcher) GetAgents() []AgentInfo {
 	custom := AgentInfo{ID: "custom", Name: name, Available: cfg.Custom.Command != "",
 		Models: []session.Model{}, Command: cfg.Custom.Command}
 	if !custom.Available {
-		custom.Reason = "Enter a command below"
+		custom.Reason = `Set "custom" in the config file`
 	}
 	return []AgentInfo{claude, codex, custom}
 }
@@ -288,10 +323,15 @@ func (l *Launcher) Toggle() {
 	}
 }
 
-// Show brings the window up, centered on the screen the cursor is on, and
-// focuses the input.
+// Show brings the window up and focuses the input. The first time, and
+// whenever the cursor is on another screen, it is centered on the cursor's
+// screen; otherwise it stays where it was dragged.
 func (l *Launcher) Show() {
-	placeWindow(l.app, l.window, windowWidth, windowHeight)
+	l.mu.Lock()
+	recenter := !l.placed
+	l.placed = true
+	l.mu.Unlock()
+	placeWindow(l.app, l.window, windowWidth, windowHeight, recenter)
 	l.window.Show()
 	l.window.Focus()
 	l.app.Event.Emit("window:shown")
@@ -301,6 +341,7 @@ func (l *Launcher) Show() {
 // Hide hides the window. The agent keeps running.
 func (l *Launcher) Hide() {
 	l.window.Hide()
+	deactivateApp()
 }
 
 // Quit exits cmdcmd, stopping the agent.

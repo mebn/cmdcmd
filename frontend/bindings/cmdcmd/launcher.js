@@ -20,12 +20,43 @@ import * as session$0 from "./internal/session/models.js";
 import * as $models from "./models.js";
 
 /**
+ * AddFolder asks for a directory (which can also be created in the dialog),
+ * adds it to the bar and selects it. It returns the path, or "" if the
+ * dialog was cancelled.
+ * @returns {$CancellablePromise<string>}
+ */
+export function AddFolder() {
+    return $Call.ByID(2602764031);
+}
+
+/**
  * CheckForUpdates looks for a newer release on GitHub and, if the user
  * agrees, downloads it, replaces the running app and relaunches.
  * @returns {$CancellablePromise<void>}
  */
 export function CheckForUpdates() {
     return $Call.ByID(3622632487);
+}
+
+/**
+ * CopyResumeCommand puts the command that continues a session in a terminal
+ * on the clipboard, e.g. cd ~/code/app && claude --resume <id>. Claude Code
+ * finds a session only from the folder it ran in, hence the cd.
+ * @param {$models.SessionItem} item
+ * @returns {$CancellablePromise<void>}
+ */
+export function CopyResumeCommand(item) {
+    return $Call.ByID(1258423355, item);
+}
+
+/**
+ * DeleteSession stops a session if it is live and deletes its transcript.
+ * Deleting the session on screen starts a new one in its place.
+ * @param {$models.SessionItem} item
+ * @returns {$CancellablePromise<void>}
+ */
+export function DeleteSession(item) {
+    return $Call.ByID(1701375613, item);
 }
 
 /**
@@ -45,6 +76,15 @@ export function GetCommands() {
 }
 
 /**
+ * GetFolders lists the folders in the bar, first adding any Claude Code has
+ * been used in.
+ * @returns {$CancellablePromise<$models.FolderList>}
+ */
+export function GetFolders() {
+    return $Call.ByID(2157137641);
+}
+
+/**
  * GetInfo returns static details for the UI.
  * @returns {$CancellablePromise<$models.Info>}
  */
@@ -61,8 +101,9 @@ export function GetSelection() {
 }
 
 /**
- * GetSessions lists the current agent's live and past sessions, newest
- * first. The session on screen is always included.
+ * GetSessions lists the current agent's live and past sessions in the
+ * selected folder (or every folder, for All), pinned first, then newest
+ * first.
  * @returns {$CancellablePromise<$models.SessionList>}
  */
 export function GetSessions() {
@@ -78,12 +119,22 @@ export function Hide() {
 }
 
 /**
- * NewSession starts a fresh conversation. The one on screen keeps running in
+ * NewSession starts a fresh conversation in the selected folder, or in the
+ * configured cwd when All is selected. The one on screen keeps running in
  * the background if it is mid-turn.
  * @returns {$CancellablePromise<void>}
  */
 export function NewSession() {
     return $Call.ByID(3412133050);
+}
+
+/**
+ * OpenFolder shows a folder in Finder, Explorer or the file manager.
+ * @param {string} path
+ * @returns {$CancellablePromise<void>}
+ */
+export function OpenFolder(path) {
+    return $Call.ByID(1367556532, path);
 }
 
 /**
@@ -106,11 +157,63 @@ export function OpenSession(item) {
 }
 
 /**
+ * PinFolder pins or unpins a folder; pinned folders come first.
+ * @param {string} path
+ * @param {boolean} pinned
+ * @returns {$CancellablePromise<void>}
+ */
+export function PinFolder(path, pinned) {
+    return $Call.ByID(251996723, path, pinned);
+}
+
+/**
+ * PinSession pins or unpins a session; pinned sessions come first. Only a
+ * session the agent has given an ID can be pinned.
+ * @param {$models.SessionItem} item
+ * @param {boolean} pinned
+ * @returns {$CancellablePromise<void>}
+ */
+export function PinSession(item, pinned) {
+    return $Call.ByID(1169876881, item, pinned);
+}
+
+/**
  * Quit exits cmdcmd, stopping the agent.
  * @returns {$CancellablePromise<void>}
  */
 export function Quit() {
     return $Call.ByID(2290958839);
+}
+
+/**
+ * RemoveFolder takes a folder out of the bar. Nothing is deleted from disk.
+ * @param {string} path
+ * @returns {$CancellablePromise<void>}
+ */
+export function RemoveFolder(path) {
+    return $Call.ByID(2653690964, path);
+}
+
+/**
+ * RenameSession names a session. A Claude session's name is written to its
+ * transcript the way /rename does, so Claude Code shows it too; a Codex
+ * thread's goes to Codex's session index.
+ * @param {$models.SessionItem} item
+ * @param {string} title
+ * @returns {$CancellablePromise<void>}
+ */
+export function RenameSession(item, title) {
+    return $Call.ByID(2182427118, item, title);
+}
+
+/**
+ * ReorderFolders puts the folders in the order given. Folders missing from
+ * paths keep their place at the end.
+ * @param {string[] | null} paths
+ * @returns {$CancellablePromise<void>}
+ */
+export function ReorderFolders(paths) {
+    return $Call.ByID(1519152988, paths);
 }
 
 /**
@@ -122,6 +225,16 @@ export function Quit() {
  */
 export function RunShell(command) {
     return $Call.ByID(2608503385, command);
+}
+
+/**
+ * SelectFolder shows the sessions of one folder, or of all of them for "".
+ * New sessions start there.
+ * @param {string} path
+ * @returns {$CancellablePromise<void>}
+ */
+export function SelectFolder(path) {
+    return $Call.ByID(1226038852, path);
 }
 
 /**
@@ -163,8 +276,9 @@ export function ShortcutLabel() {
 }
 
 /**
- * Show brings the window up, centered on the screen the cursor is on, and
- * focuses the input.
+ * Show brings the window up and focuses the input. The first time, and
+ * whenever the cursor is on another screen, it is centered on the cursor's
+ * screen; otherwise it stays where it was dragged.
  * @returns {$CancellablePromise<void>}
  */
 export function Show() {

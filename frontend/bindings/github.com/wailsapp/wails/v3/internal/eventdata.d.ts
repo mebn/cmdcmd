@@ -14,7 +14,9 @@ declare module "@wailsio/runtime" {
         interface CustomEvents {
             "agents:changed": void;
             "claude": main$0.AgentEvent;
+            "folders:changed": void;
             "notice": string;
+            "session:append": main$0.AppendedItems;
             "session:open": main$0.OpenedSession;
             "sessions:changed": void;
             "window:shown": void;

@@ -256,14 +256,15 @@ svg {
 
 /* ---------- tray ---------- */
 
-/* A separate floating bar below the composer for session controls, narrower
-than the composer and centered. */
+/* A separate floating bar below the composer, narrower than the composer
+   and centered. The first row holds All and the folders between the New and
+   settings buttons; the second the sessions of the selected one. */
 #tray {
     align-self: center;
     width: 90%;
     display: flex;
-    align-items: center;
-    gap: 4px;
+    flex-direction: column;
+    gap: 2px;
     margin-top: var(--gap);
     padding: 5px 6px;
     border-radius: 18px;
@@ -272,6 +273,15 @@ than the composer and centered. */
     box-shadow: var(--shadow);
     font-size: 12.5px;
 }
+
+.tray-row {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+}
+
+/* The sessions sit under the folders, lined up with them. */
+#session-row { padding: 0 34px; }
 
 .icon-button {
     flex: none;
@@ -286,14 +296,15 @@ than the composer and centered. */
 .icon-button:hover, .icon-button[aria-expanded="true"] { background: var(--fill-2); color: var(--text); }
 .icon-button:active { transform: scale(0.92); }
 .icon-button svg { width: 16px; height: 16px; }
+#new svg { transition: transform 300ms var(--ease); }
+#new[aria-expanded="true"] svg { transform: rotate(45deg); }
 #settings-button svg { transition: transform 300ms var(--ease); }
 #settings-button[aria-expanded="true"] svg { transform: rotate(60deg); }
 
-/* ---------- sessions ---------- */
+/* ---------- folders and sessions ---------- */
 
-/* The sessions sit in the tray between New and settings, in a row that
-   scrolls sideways. */
-#session-row {
+/* Each row scrolls sideways, fading out at its ends. */
+.chip-row {
     flex: 1;
     min-width: 0;
     display: flex;
@@ -304,31 +315,64 @@ than the composer and centered. */
     -webkit-mask-image: linear-gradient(to right, transparent 0, #000 10px, #000 calc(100% - 10px), transparent 100%);
     mask-image: linear-gradient(to right, transparent 0, #000 10px, #000 calc(100% - 10px), transparent 100%);
 }
-#session-row::-webkit-scrollbar { display: none; }
+.chip-row::-webkit-scrollbar { display: none; }
 
-.session {
+.chip {
     flex: none;
+    position: relative;
     display: inline-flex;
     align-items: center;
     gap: 7px;
-    max-width: 200px;
+    max-width: 220px;
     height: 28px;
     padding: 0 12px 0 10px;
     border-radius: 999px;
     color: var(--text-2);
     font-size: 12.5px;
     font-weight: 500;
-    transition: background 120ms ease, color 120ms ease;
+    transition: background 120ms ease, color 120ms ease, box-shadow 160ms ease;
 }
-.session:first-child { margin-left: 6px; }
-.session:last-child { margin-right: 6px; }
-.session:hover { background: var(--fill-2); color: var(--text); }
-.session.active { background: var(--fill-3); color: var(--text); }
-.session-name { min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.chip:first-child { margin-left: 6px; }
+.chip:last-child { margin-right: 6px; }
+.chip:hover { background: var(--fill-2); color: var(--text); }
+.chip.active { background: var(--fill-3); color: var(--text); }
+.chip-name { min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.chip .pin { flex: none; width: 11px; height: 11px; margin-right: -3px; color: var(--text-3); stroke-width: 2.2; }
+.chip-rename {
+    flex: none;
+    width: 220px;
+    height: 28px;
+    margin: 0 6px;
+    padding: 0 12px;
+    border: 0.5px solid var(--accent);
+    border-radius: 999px;
+    outline: none;
+    background: var(--fill-1);
+    color: var(--text);
+    font: 500 12.5px/1 inherit;
+    font-family: inherit;
+    caret-color: var(--accent);
+    box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 25%, transparent);
+    user-select: text;
+    -webkit-user-select: text;
+}
 .session-empty { padding: 4px 12px; font-size: 12.5px; color: var(--text-3); }
 
+.folder { max-width: 180px; touch-action: none; }
+/* A folder shows a status only when one of its sessions needs it. */
+.folder[data-status="idle"] > .status { display: none; }
+.folder.missing .chip-name { text-decoration: line-through; color: var(--text-3); }
+.folder.dragging {
+    z-index: 1;
+    background: var(--surface-raised);
+    color: var(--text);
+    box-shadow: 0 4px 14px rgba(0, 0, 0, 0.25);
+    cursor: grabbing;
+    transition: none;
+}
+
 /* Status symbols: a hollow ring when idle, a spinner while running, a
-   glowing dot when a reply is waiting for you, a red dot after an error. */
+   blue dot when a reply is waiting for you, a red dot after an error. */
 .status {
     flex: none;
     position: relative;
@@ -344,22 +388,14 @@ than the composer and centered. */
     border-top-color: var(--accent);
     animation: spin 0.8s linear infinite;
 }
-[data-status="waiting"] > .status {
-    border: none;
-    background: var(--accent);
-    box-shadow: 0 0 0 0 color-mix(in srgb, var(--accent) 60%, transparent);
-    animation: ping 1.8s var(--ease) infinite;
-}
-@keyframes ping {
-    70%, 100% { box-shadow: 0 0 0 5px transparent; }
-}
+[data-status="waiting"] > .status { border: none; background: var(--accent); }
 [data-status="error"] > .status { border: none; background: var(--danger); }
 
-/* ---------- settings popover ---------- */
+/* ---------- popovers ---------- */
 
-/* The popover lives at the top level of the page and is placed next to the
-   settings button by JS, so no card can cover or clip it. The outer box clips
-   to the rounded shape; the inner box scrolls. */
+/* Popovers live at the top level of the page and are placed next to their
+   anchor by JS, so no card can cover or clip them. The outer box clips to
+   the rounded shape; the inner box scrolls. */
 .popover {
     position: fixed;
     z-index: 1000;
@@ -374,6 +410,8 @@ than the composer and centered. */
 .popover[hidden] { display: none; }
 .popover.up { transform-origin: 95% 100%; }
 .popover.down { transform-origin: 95% 0; }
+.popover.from-left.up { transform-origin: 5% 100%; }
+.popover.from-left.down { transform-origin: 5% 0; }
 @keyframes pop {
     from { opacity: 0; transform: scale(0.96); }
     to { opacity: 1; transform: none; }
@@ -387,31 +425,70 @@ than the composer and centered. */
 .popover-scroll {
     max-height: 420px;
     overflow-y: auto;
-    padding: 8px;
+    padding: 6px;
 }
 
-.option-section[hidden] { display: none; }
-.option-section + .option-section {
-    margin-top: 6px;
-    padding-top: 6px;
-    border-top: 0.5px solid var(--hairline);
+/* ---------- settings ---------- */
+
+/* Three expandable sections; each header shows the current choice. The body
+   animates open by growing its grid row from 0fr to 1fr. */
+.expander[hidden] { display: none; }
+.expander + .expander { margin-top: 2px; }
+
+.expander-head {
+    width: 100%;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 9px 10px;
+    border-radius: 11px;
+    text-align: left;
+    transition: background 100ms ease;
 }
-.section-title {
-    padding: 6px 10px 4px;
-    font-size: 11px;
-    font-weight: 600;
-    letter-spacing: 0.04em;
-    text-transform: uppercase;
+.expander-head:hover { background: var(--fill-2); }
+.expander-head .chevron {
+    flex: none;
+    width: 13px;
+    height: 13px;
     color: var(--text-3);
+    stroke-width: 2.4;
+    transition: transform 240ms var(--ease);
+}
+.expander.open .chevron { transform: rotate(90deg); }
+.expander-title { font-size: 13px; font-weight: 600; }
+.expander-value {
+    flex: 1;
+    min-width: 0;
+    text-align: right;
+    font-size: 12.5px;
+    color: var(--text-2);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
 }
 
-.option-list { display: flex; flex-direction: column; gap: 1px; }
+.expander-body {
+    display: grid;
+    grid-template-rows: 0fr;
+    transition: grid-template-rows 260ms var(--ease);
+}
+.expander.open .expander-body { grid-template-rows: 1fr; }
+.expander-inner {
+    min-height: 0;
+    overflow: hidden;
+    padding-left: 14px;
+    opacity: 0;
+    transition: opacity 200ms ease;
+}
+.expander.open .expander-inner { opacity: 1; }
+
+.option-list { display: flex; flex-direction: column; gap: 1px; padding: 2px 0 6px; }
 .option {
     display: grid;
     grid-template-columns: 1fr 16px;
     align-items: center;
     column-gap: 10px;
-    padding: 8px 10px;
+    padding: 7px 10px;
     border-radius: 11px;
     text-align: left;
     transition: background 100ms ease;
@@ -430,34 +507,68 @@ than the composer and centered. */
 .option .check { grid-row: 1 / span 2; grid-column: 2; color: var(--accent); visibility: hidden; }
 .option.active .check { visibility: visible; }
 
-.custom-cmd { margin: 4px 2px 2px; padding: 4px 8px; }
-.custom-cmd label {
-    display: block;
-    margin-bottom: 6px;
-    font-size: 12px;
-    font-weight: 500;
-    color: var(--text-2);
-}
-.custom-cmd input {
-    width: 100%;
-    height: 32px;
-    padding: 0 10px;
-    border: 0.5px solid var(--hairline);
-    border-radius: 9px;
-    outline: none;
-    background: var(--fill-1);
-    color: var(--text);
-    font: 12.5px ui-monospace, "SF Mono", Menlo, Consolas, monospace;
-    caret-color: var(--accent);
-    transition: border-color 120ms ease, box-shadow 120ms ease;
-}
-.custom-cmd input:focus {
-    border-color: var(--accent);
-    box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 25%, transparent);
-}
-.custom-cmd input::placeholder { color: var(--text-3); }
-.custom-hint { margin-top: 6px; font-size: 11.5px; color: var(--text-3); }
+/* ---------- menus ---------- */
 
+.menu-pop { width: 232px; border-radius: 14px; }
+.menu-pop .popover-scroll { padding: 5px; }
+
+.menu-item {
+    width: 100%;
+    display: grid;
+    grid-template-columns: 1fr auto;
+    align-items: center;
+    column-gap: 12px;
+    padding: 7px 10px;
+    border-radius: 9px;
+    text-align: left;
+    font-size: 13px;
+    transition: background 100ms ease, color 100ms ease;
+}
+.menu-item:hover:not(:disabled) { background: var(--accent); color: var(--accent-text); }
+.menu-item:disabled { opacity: 0.45; cursor: default; }
+.menu-item.danger { color: var(--danger); }
+.menu-item.danger:hover:not(:disabled), .menu-item.confirming { background: var(--danger); color: #fff; }
+.menu-label { font-weight: 500; }
+.menu-detail { grid-column: 1 / -1; font-size: 11.5px; opacity: 0.7; }
+.shortcut {
+    font: inherit;
+    font-size: 12px;
+    color: var(--text-3);
+    letter-spacing: 0.04em;
+}
+.menu-item:hover .shortcut { color: inherit; opacity: 0.8; }
+
+/* ---------- tooltip ---------- */
+
+#tip {
+    position: fixed;
+    z-index: 2000;
+    max-width: 340px;
+    padding: 6px 10px;
+    border-radius: 9px;
+    background: var(--popover);
+    border: 0.5px solid var(--hairline);
+    box-shadow: 0 6px 20px -6px rgba(0, 0, 0, 0.45), 0 0 0 0.5px rgba(0, 0, 0, 0.15);
+    font-size: 12px;
+    line-height: 1.45;
+    pointer-events: none;
+    animation: fade 120ms ease;
+}
+#tip[hidden] { display: none; }
+.tip-title { font-weight: 600; overflow-wrap: anywhere; }
+.tip-line {
+    color: var(--text-2);
+    font-size: 11.5px;
+    overflow-wrap: anywhere;
+}
+
+/* ---------- moving the window ---------- */
+
+/* Dragging empty space in the window card (around the composer, or in the
+   chat area) moves the window; the tray and anything you click or select
+   don't. Wails reads this property. */
+#window { --wails-draggable: drag; }
+#window .msg, #window .thinking, #input, #window button, #menu, #notice { --wails-draggable: no-drag; }
 
 /* ---------- notice ---------- */
 
@@ -617,6 +728,10 @@ than the composer and centered. */
     background-clip: text;
     color: transparent;
     animation: shimmer 1.6s linear infinite;
+}
+.thinking-time {
+    margin-left: 8px;
+    font-variant-numeric: tabular-nums;
 }
 @keyframes shimmer { from { background-position: 100% 0; } to { background-position: -100% 0; } }
 
