@@ -62,8 +62,9 @@ type Options struct {
 type Agent interface {
 	// Start prepares the agent ahead of the first message, when that helps.
 	Start() error
-	// Send sends a user message; replies arrive as events.
-	Send(text string) error
+	// Send sends a user message with any attached files (absolute paths);
+	// replies arrive as events.
+	Send(text string, files []string) error
 	// Configure switches model and effort, keeping the conversation.
 	Configure(model, effort string)
 	// Close stops the agent.

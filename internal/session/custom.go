@@ -27,8 +27,8 @@ func (c *Custom) Start() error {
 	return nil
 }
 
-func (c *Custom) Send(text string) error {
-	c.turns.send(text)
+func (c *Custom) Send(text string, files []string) error {
+	c.turns.send(withPaths(text, files))
 	return nil
 }
 

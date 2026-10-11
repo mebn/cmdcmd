@@ -16,6 +16,7 @@ const notice = document.getElementById('notice');
 let commands = [];    // slash commands from Claude Code
 let menuItems = [];   // commands currently shown in the menu
 let selected = 0;     // index into menuItems
+let attached = [];    // files to send with the next message: {path, name, preview}
 
 // ---------- views ----------
 
@@ -104,7 +105,8 @@ function addTool(v, tool, text) {
     });
 }
 
-// While a turn runs, "Thinking…" shows how long it has been going.
+// While a turn runs, "Thinking…" stays below its output, from the message
+// being sent until the turn finishes, and shows how long it has been going.
 function elapsed(ms) {
     const s = Math.max(0, Math.floor(ms / 1000));
     return s < 60 ? `${s}s` : `${Math.floor(s / 60)}m ${String(s % 60).padStart(2, '0')}s`;
@@ -159,7 +161,7 @@ function setBusy(v, delta) {
         v.outside = false;
     }
     if (v === view) sendButton.classList.toggle('busy', v.pending > 0);
-    setThinking(v, v.pending > 0 && !v.current);
+    setThinking(v, v.pending > 0);
 }
 
 Events.On('claude', ({data: ev}) => {
@@ -174,17 +176,13 @@ Events.On('claude', ({data: ev}) => {
             v.current = null;
             break;
         case 'text':
-            if (!v.current) {
-                setThinking(v, false);
-                v.current = {el: add(v, 'assistant'), text: ''};
-            }
+            if (!v.current) v.current = {el: add(v, 'assistant'), text: ''};
             v.current.text += ev.text;
             renderCurrent(v);
             break;
         case 'tool':
             v.current = null;
             addTool(v, ev.tool, ev.text);
-            setThinking(v, true);
             break;
         case 'tool_error': {
             const tools = v.el.querySelectorAll('.msg.tool');
@@ -208,27 +206,56 @@ Events.On('claude', ({data: ev}) => {
 
 async function send() {
     const text = input.value.trim();
-    if (!text || !view) return;
-    setInput('');
+    if ((!text && !attached.length) || !view) return;
     if (text === '/clear') {
+        setInput('');
         Launcher.NewSession();
         return;
     }
     if (text.startsWith('!')) {
+        setInput('');
         runShell(text.slice(1).trim());
         return;
     }
+    const files = attached;
+    attached = [];
+    renderAttachments();
+    setInput('');
     const v = view;
     v.current = null;
-    addText(v, 'user', text);
+    addUser(v, text, files);
     v.el.scrollTop = v.el.scrollHeight;
     setBusy(v, +1);
     try {
-        await Launcher.Send(text);
+        await Launcher.Send(text, files.map(a => a.path));
     } catch (err) {
         setBusy(v, -1);
         addText(v, 'system error', String(err));
     }
+}
+
+// addUser shows a sent message, with thumbnails or names of its attachments.
+function addUser(v, text, files) {
+    return add(v, 'user', el => {
+        if (files.length) {
+            const row = document.createElement('div');
+            row.className = 'msg-attachments';
+            row.append(...files.map(a => {
+                if (a.preview) {
+                    const img = document.createElement('img');
+                    img.src = a.preview;
+                    img.alt = a.name;
+                    return img;
+                }
+                const name = document.createElement('span');
+                name.className = 'file-name';
+                name.textContent = '📎 ' + a.name;
+                return name;
+            }));
+            el.append(row);
+        }
+        if (text) el.append(text);
+    });
 }
 
 // runShell runs a ! command and shows its output. The agent sees both with
@@ -261,11 +288,139 @@ function setInput(value) {
 function onInput() {
     input.style.height = 'auto';
     input.style.height = input.scrollHeight + 'px';
-    sendButton.disabled = input.value.trim() === '';
+    sendButton.disabled = input.value.trim() === '' && attached.length === 0;
     composer.classList.toggle('bash', input.value.startsWith('!'));
     updateMenu();
     updateLayout();
 }
+
+// ---------- attachments ----------
+
+// Files and images go with the next message. They are picked with the +
+// button or pasted: copied files by path, anything else (a screenshot, an
+// image copied from a page) saved to a temporary file first.
+const attachButton = document.getElementById('attach');
+const attachmentRow = document.getElementById('attachments');
+
+const fileIcon = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z"/><path d="M14 3v5h5"/></svg>';
+const removeIcon = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"/></svg>';
+
+function attach(list) {
+    if (!list?.length) return;
+    for (const a of list) {
+        if (!attached.some(b => b.path === a.path)) attached.push(a);
+    }
+    renderAttachments();
+    input.focus();
+}
+
+// Chips are added and removed one by one, so only those that change animate.
+const attachmentTrack = attachmentRow.querySelector('.attachments-track');
+const chips = new Map(); // path → chip element
+
+function renderAttachments() {
+    for (const a of attached) {
+        if (chips.has(a.path)) continue;
+        const el = attachmentChip(a);
+        chips.set(a.path, el);
+        attachmentTrack.append(el);
+        el.scrollIntoView({block: 'nearest', inline: 'nearest', behavior: 'smooth'});
+    }
+    for (const [path, el] of chips) {
+        if (attached.some(a => a.path === path)) continue;
+        chips.delete(path);
+        removeChip(el);
+    }
+    attachmentRow.classList.toggle('open', attached.length > 0);
+    onInput();
+}
+
+function attachmentChip(a) {
+    const el = document.createElement('div');
+    el.className = 'attachment' + (a.preview ? ' image' : '');
+    el.dataset.tip = a.path;
+    if (a.preview) {
+        const img = document.createElement('img');
+        img.src = a.preview;
+        img.alt = a.name;
+        el.append(img);
+    } else {
+        const icon = document.createElement('span');
+        icon.className = 'file-icon';
+        icon.innerHTML = fileIcon;
+        const name = document.createElement('span');
+        name.className = 'file-name';
+        name.textContent = a.name;
+        el.append(icon, name);
+    }
+    const remove = document.createElement('button');
+    remove.type = 'button';
+    remove.className = 'remove';
+    remove.setAttribute('aria-label', 'Remove ' + a.name);
+    remove.innerHTML = removeIcon;
+    remove.addEventListener('click', () => {
+        attached = attached.filter(b => b !== a);
+        renderAttachments();
+        input.focus();
+    });
+    el.append(remove);
+    return el;
+}
+
+// removeChip shrinks a chip away from its current width, then drops it.
+function removeChip(el) {
+    el.style.width = el.offsetWidth + 'px';
+    void el.offsetWidth; // start the transition from that width
+    el.classList.add('leaving');
+    el.style.width = '0px';
+    el.addEventListener('transitionend', e => {
+        if (e.target === el && e.propertyName === 'width') el.remove();
+    });
+    setTimeout(() => el.remove(), 400); // in case no transition runs
+}
+
+function showError(err) {
+    if (view) addText(view, 'system error', String(err));
+}
+
+attachButton.addEventListener('click', async () => {
+    try {
+        attach(await Launcher.ChooseAttachments());
+    } catch (err) {
+        showError(err);
+    }
+});
+
+function readBase64(file) {
+    return new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = () => resolve(String(reader.result).replace(/^[^,]*,/, ''));
+        reader.onerror = () => reject(reader.error);
+        reader.readAsDataURL(file);
+    });
+}
+
+async function pasteFiles(files) {
+    try {
+        // Files copied in Finder are attached where they are.
+        const copied = await Launcher.ClipboardFiles();
+        if (copied?.length) {
+            attach(copied);
+            return;
+        }
+        attach(await Promise.all(files.map(async f =>
+            Launcher.SaveAttachment(f.name || 'pasted', await readBase64(f)))));
+    } catch (err) {
+        showError(err);
+    }
+}
+
+document.addEventListener('paste', e => {
+    const files = [...(e.clipboardData?.files ?? [])];
+    if (!files.length) return;
+    e.preventDefault();
+    pasteFiles(files);
+});
 
 // ---------- slash command menu ----------
 

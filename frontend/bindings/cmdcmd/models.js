@@ -39,6 +39,14 @@ import * as session$0 from "./internal/session/models.js";
  */
 
 /**
+ * Attachment is a file to send with the next message.
+ * @typedef {Object} Attachment
+ * @property {string} path
+ * @property {string} name
+ * @property {string} [preview] - a data: URL, for images
+ */
+
+/**
  * FolderItem is one folder in the bar.
  * @typedef {Object} FolderItem
  * @property {string} path

@@ -49,7 +49,26 @@ func (s *Claude) Start() error {
 }
 
 // Send writes a user message to Claude, starting the process if needed.
-func (s *Claude) Send(text string) error {
+// Images go along inline; other files are named by path for Claude to read.
+func (s *Claude) Send(text string, files []string) error {
+	var images []map[string]any
+	var others []string
+	for _, f := range files {
+		if img := imageBlock(f); img != nil {
+			images = append(images, img)
+		} else {
+			others = append(others, f)
+		}
+	}
+	var content any = withPaths(text, others)
+	if len(images) > 0 {
+		blocks := images
+		if t := content.(string); t != "" {
+			blocks = append(blocks, map[string]any{"type": "text", "text": t})
+		}
+		content = blocks
+	}
+
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if err := s.ensureStarted(); err != nil {
@@ -58,7 +77,7 @@ func (s *Claude) Send(text string) error {
 	s.busy++
 	return s.write(map[string]any{
 		"type":    "user",
-		"message": map[string]any{"role": "user", "content": text},
+		"message": map[string]any{"role": "user", "content": content},
 	})
 }
 

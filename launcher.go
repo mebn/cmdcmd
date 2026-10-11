@@ -23,7 +23,7 @@ const (
 	windowWidth  = 880
 	windowHeight = 780
 	// A window dragged to within this many pixels of the center of its
-	// screen snaps back to it.
+	// screen snaps to it.
 	snapDistance = 40
 )
 
@@ -38,9 +38,8 @@ type Launcher struct {
 	mu           sync.Mutex
 	cfg          config.Config
 	state        config.State
-	dialogOpen   bool // a system dialog is up; losing focus to it doesn't hide the window
-	placed       bool // the window has been shown once; later it stays where it was moved
-	snapTimer    *time.Timer
+	dialogOpen   bool           // a system dialog is up; losing focus to it doesn't hide the window
+	placed       bool           // the window has been shown once; later it stays where it was moved
 	live         []*liveSession // the session on screen and any running in the background
 	current      *liveSession
 	nextKey      int
@@ -90,16 +89,9 @@ func (l *Launcher) attach(app *application.App, window *application.WebviewWindo
 			window.Hide()
 		}
 	})
-	// Dragging empty space moves the window; once it rests near the center
-	// of its screen, snap it there so it can be put back exactly.
-	window.OnWindowEvent(events.Common.WindowDidMove, func(*application.WindowEvent) {
-		l.mu.Lock()
-		if l.snapTimer != nil {
-			l.snapTimer.Stop()
-		}
-		l.snapTimer = time.AfterFunc(250*time.Millisecond, func() { snapWindow(window, snapDistance) })
-		l.mu.Unlock()
-	})
+	// Dragging empty space moves the window; near the center of its screen
+	// it snaps there so it can be put back exactly.
+	snapToCenter(window, snapDistance)
 	l.startAgent()
 	go l.followTranscripts()
 	go l.watchSessions()

@@ -255,9 +255,9 @@ func (l *Launcher) emitOpened(opened OpenedSession) {
 	l.startAgent()
 }
 
-// Send sends a message to the current session, along with the output of any
-// ! commands run since the last one.
-func (l *Launcher) Send(text string) error {
+// Send sends a message and any attached files (paths) to the current
+// session, along with the output of any ! commands run since the last one.
+func (l *Launcher) Send(text string, files []string) error {
 	l.mu.Lock()
 	ls := l.current
 	if ls.stale && ls.busy == 0 && ls.id != "" {
@@ -269,6 +269,9 @@ func (l *Launcher) Send(text string) error {
 	a := ls.agent
 	if ls.title == "" {
 		ls.title = text
+		if text == "" && len(files) > 0 {
+			ls.title = filepath.Base(files[0])
+		}
 	}
 	message := text
 	if ls.shell != "" {
@@ -281,7 +284,7 @@ func (l *Launcher) Send(text string) error {
 	l.mu.Unlock()
 	l.app.Event.Emit("sessions:changed")
 
-	err := a.Send(message)
+	err := a.Send(message, files)
 	if err != nil {
 		l.mu.Lock()
 		ls.busy--

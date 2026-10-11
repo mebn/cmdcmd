@@ -174,10 +174,11 @@ svg {
 #composer {
     position: relative;
     display: flex;
+    flex-wrap: wrap;
     align-items: center;
-    gap: 12px;
+    gap: 0 8px;
     min-height: 64px;
-    padding: 12px 12px 12px 22px;
+    padding: 12px;
     /* Concentric with the window card: its radius minus the inset. */
     border-radius: 22px;
     background: var(--surface-raised);
@@ -210,6 +211,102 @@ svg {
 }
 
 #input::placeholder { color: var(--text-3); }
+
+/* Files to send with the message, in a row above the input. The row opens
+   and closes by animating its grid track from 0fr to 1fr; the spacing below
+   it is padding inside, so a closed row takes no room at all. */
+#attachments {
+    flex-basis: 100%;
+    display: grid;
+    grid-template-rows: 0fr;
+    transition: grid-template-rows 320ms var(--ease);
+}
+#attachments.open { grid-template-rows: 1fr; }
+.attachments-clip { min-height: 0; overflow: hidden; }
+.attachments-track {
+    display: flex;
+    padding: 0 0 12px;
+    overflow-x: auto;
+    scrollbar-width: none;
+}
+.attachments-track::-webkit-scrollbar { display: none; }
+
+.attachment {
+    position: relative;
+    flex: none;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    max-width: 220px;
+    height: 52px;
+    margin-right: 8px;
+    padding: 0 30px 0 6px;
+    border-radius: 12px;
+    background: var(--fill-1);
+    border: 0.5px solid var(--hairline);
+    font-size: 12.5px;
+    color: var(--text-2);
+    overflow: hidden;
+    animation: chip-in 280ms var(--ease);
+    transition: width 260ms var(--ease), margin 260ms var(--ease), padding 260ms var(--ease),
+                opacity 180ms ease, transform 260ms var(--ease);
+}
+@keyframes chip-in {
+    from { opacity: 0; transform: scale(0.6); }
+}
+/* Leaving, a chip fades and shrinks while its slot closes up; the inline
+   width it starts from is set in JS. */
+.attachment.leaving {
+    margin-right: 0;
+    padding-left: 0;
+    padding-right: 0;
+    opacity: 0;
+    transform: scale(0.6);
+    pointer-events: none;
+}
+.attachment.image { padding: 0; width: 52px; }
+.attachment img {
+    width: 52px;
+    height: 100%;
+    object-fit: cover;
+    border-radius: inherit;
+}
+.attachment .file-icon {
+    flex: none;
+    display: grid;
+    place-items: center;
+    width: 38px;
+    height: 38px;
+    border-radius: 8px;
+    background: var(--fill-2);
+}
+.attachment .file-icon svg { width: 18px; height: 18px; }
+.attachment .file-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* Inside the chip's corner: the row clips anything that sticks out. */
+.attachment .remove {
+    position: absolute;
+    top: 4px;
+    right: 4px;
+    display: grid;
+    place-items: center;
+    width: 18px;
+    height: 18px;
+    border-radius: 50%;
+    background: rgba(0, 0, 0, 0.6);
+    color: #fff;
+    opacity: 0;
+    transform: scale(0.8);
+    transition: opacity 140ms ease, transform 140ms var(--ease), background 120ms ease;
+}
+.attachment:hover .remove { opacity: 1; transform: none; }
+.attachment .remove:hover { background: rgba(0, 0, 0, 0.8); }
+.attachment .remove svg { width: 10px; height: 10px; stroke-width: 3; }
+
+/* Attachments shown in a sent message. */
+.msg-attachments { display: flex; flex-wrap: wrap; gap: 6px; }
+.msg-attachments:not(:only-child) { margin-bottom: 6px; }
+.msg-attachments img { max-width: 160px; max-height: 120px; border-radius: 10px; display: block; }
+.msg-attachments .file-name { opacity: 0.85; font-size: 0.9em; }
 
 /* A leading "!" runs the line as a shell command. */
 #composer.bash { border-color: color-mix(in srgb, var(--bash) 60%, transparent); }
@@ -296,6 +393,8 @@ svg {
 .icon-button:hover, .icon-button[aria-expanded="true"] { background: var(--fill-2); color: var(--text); }
 .icon-button:active { transform: scale(0.92); }
 .icon-button svg { width: 16px; height: 16px; }
+#attach { align-self: center; color: var(--text-3); }
+#attach svg { width: 18px; height: 18px; }
 #new svg { transition: transform 300ms var(--ease); }
 #new[aria-expanded="true"] svg { transform: rotate(45deg); }
 #settings-button svg { transition: transform 300ms var(--ease); }

@@ -39,6 +39,24 @@ export function CheckForUpdates() {
 }
 
 /**
+ * ChooseAttachments asks for files to attach. It returns none if the dialog
+ * was cancelled.
+ * @returns {$CancellablePromise<$models.Attachment[] | null>}
+ */
+export function ChooseAttachments() {
+    return $Call.ByID(3216730997);
+}
+
+/**
+ * ClipboardFiles returns the files copied to the clipboard (in Finder), so
+ * a paste attaches them in place rather than a copy of their contents.
+ * @returns {$CancellablePromise<$models.Attachment[] | null>}
+ */
+export function ClipboardFiles() {
+    return $Call.ByID(905499593);
+}
+
+/**
  * CopyResumeCommand puts the command that continues a session in a terminal
  * on the clipboard, e.g. cd ~/code/app && claude --resume <id>. Claude Code
  * finds a session only from the folder it ran in, hence the cd.
@@ -228,6 +246,18 @@ export function RunShell(command) {
 }
 
 /**
+ * SaveAttachment writes pasted data (base64) to a temporary file and returns
+ * it as an attachment, for content that isn't a file on disk, like a
+ * screenshot.
+ * @param {string} name
+ * @param {string} data
+ * @returns {$CancellablePromise<$models.Attachment>}
+ */
+export function SaveAttachment(name, data) {
+    return $Call.ByID(2185553032, name, data);
+}
+
+/**
  * SelectFolder shows the sessions of one folder, or of all of them for "".
  * New sessions start there.
  * @param {string} path
@@ -238,13 +268,14 @@ export function SelectFolder(path) {
 }
 
 /**
- * Send sends a message to the current session, along with the output of any
- * ! commands run since the last one.
+ * Send sends a message and any attached files (paths) to the current
+ * session, along with the output of any ! commands run since the last one.
  * @param {string} text
+ * @param {string[] | null} files
  * @returns {$CancellablePromise<void>}
  */
-export function Send(text) {
-    return $Call.ByID(972024998, text);
+export function Send(text, files) {
+    return $Call.ByID(972024998, text, files);
 }
 
 /**

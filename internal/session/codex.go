@@ -35,8 +35,8 @@ func (c *Codex) Start() error {
 	return nil
 }
 
-func (c *Codex) Send(text string) error {
-	c.turns.send(text)
+func (c *Codex) Send(text string, files []string) error {
+	c.turns.send(withPaths(text, files))
 	return nil
 }
 

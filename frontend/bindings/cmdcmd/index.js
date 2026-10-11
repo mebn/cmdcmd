@@ -25,6 +25,11 @@ import * as $models from "./models.js";
  */
 
 /**
+ * Attachment is a file to send with the next message.
+ * @typedef {$models.Attachment} Attachment
+ */
+
+/**
  * FolderItem is one folder in the bar.
  * @typedef {$models.FolderItem} FolderItem
  */

@@ -11,8 +11,3 @@ func placeWindow(_ *application.App, window *application.WebviewWindow, width, h
 	window.SetSize(width, height)
 	window.Center()
 }
-
-// snapWindow centers the window on its screen if it is close to centered.
-func snapWindow(window *application.WebviewWindow, threshold int) {
-	snapRelative(window, threshold)
-}
