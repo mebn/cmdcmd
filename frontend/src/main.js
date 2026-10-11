@@ -68,6 +68,44 @@ function updateLayout() {
     stage.classList.toggle('expanded', expanded);
 }
 
+// ---------- frosted backdrop ----------
+
+// On macOS the cards are frosted: the desktop behind them shows through
+// blurred. The blur is native and covers only the shapes reported here, so
+// every frame the cards' outlines are measured and sent when they change.
+const frosted = /Mac/.test(navigator.platform);
+document.documentElement.classList.toggle('frosted', frosted);
+
+function blurShape(el) {
+    const r = el.getBoundingClientRect();
+    const radius = parseFloat(getComputedStyle(el).borderTopLeftRadius) || 0;
+    return {x: r.left, y: r.top, width: r.width, height: r.height, radius};
+}
+
+// The window card counts only while its surface shows, so the blur follows
+// it as it fades in and out.
+function surfaceShows(el) {
+    const alpha = /rgba\([^)]*,\s*([\d.]+)\)/.exec(getComputedStyle(el).backgroundColor);
+    return !alpha || parseFloat(alpha[1]) > 0.05;
+}
+
+let lastBlur = '';
+function trackBlur() {
+    const els = [document.getElementById('window'), document.getElementById('input-box'),
+        ...document.querySelectorAll('.popover:not([hidden]), #tip:not([hidden])')];
+    const shapes = els.filter(el => el.id !== 'window' || surfaceShows(el))
+        .map(blurShape)
+        .filter(s => s.width > 0 && s.height > 0);
+    const key = JSON.stringify(shapes);
+    if (key !== lastBlur) {
+        lastBlur = key;
+        Launcher.SetBlur(shapes);
+    }
+    requestAnimationFrame(trackBlur);
+}
+
+if (frosted) requestAnimationFrame(trackBlur);
+
 // ---------- history ----------
 
 function nearBottom(v) {
@@ -796,7 +834,7 @@ function showContextMenu(e, items) {
 
 // ---------- settings: agent, model, effort ----------
 
-// The gear in the tray opens a popover with one expandable section each for
+// The gear in the bar opens a popover with one expandable section each for
 // the agent, model and effort; a section's header shows the current choice.
 // Choosing an option keeps the popover open.
 const settingsPop = document.getElementById('settings-pop');
@@ -974,10 +1012,13 @@ Events.On('window:shown', () => {
 
 // ---------- folders ----------
 
-// The tray's first row holds All and the folders, between the New and
-// settings buttons; the second row holds the sessions of the selected one.
-// Folders can be dragged to reorder them (pinned ones stay first).
-const folderRow = document.getElementById('folder-row');
+// The bar under the input holds a folder picker after the New button: it
+// shows the selected folder and opens a menu with All and every folder. The
+// sessions of the selected one follow it. Folders can be dragged in the menu
+// to reorder them (pinned ones stay first).
+const folderButton = document.getElementById('folder-button');
+const folderMenu = document.getElementById('folder-menu');
+const folderList = folderMenu.querySelector('.popover-scroll');
 const sessionRow = document.getElementById('session-row');
 const statusNames = {
     idle: 'Idle',
@@ -1009,7 +1050,7 @@ function tildePath(path) {
     return path.startsWith(home + '/') || path.startsWith(home + '\\') ? '~' + path.slice(home.length) : path;
 }
 
-// chip builds a pill for the folder or session rows.
+// chip builds a pill for the session row.
 function chip(className, label, status, max, tipLines) {
     const b = document.createElement('button');
     b.type = 'button';
@@ -1031,20 +1072,33 @@ async function loadFolders() {
     updatePlaceholder();
 }
 
+function selectedFolder() {
+    return folders.folders.find(f => f.path === folders.selected);
+}
+
+// renderFolders updates the picker and, while open, its menu.
 function renderFolders() {
-    const all = chip('folder all' + (folders.selected === '' ? ' active' : ''), 'All', folders.allStatus, maxFolderName,
-        () => ['All folders', `New sessions start in ${tildePath(folders.cwd)}`, folderStatusNames[folders.allStatus]]);
-    all.setAttribute('role', 'tab');
+    const f = selectedFolder();
+    folderButton.dataset.status = f ? f.status : folders.allStatus;
+    folderButton.classList.toggle('missing', !!f && !f.exists);
+    folderButton.querySelector('.chip-name').textContent = clip(f ? f.name : 'All', maxFolderName);
+    folderButton._tip = () => f
+        ? [f.name, tildePath(f.path), f.exists ? folderStatusNames[f.status] : 'Folder not found', f.pinned ? 'Pinned' : '']
+        : ['All folders', `New sessions start in ${tildePath(folders.cwd)}`, folderStatusNames[folders.allStatus]];
+    if (openPop?.el === folderMenu && !folderList.querySelector('.dragging')) renderFolderMenu();
+}
+
+function renderFolderMenu() {
+    const all = folderItem('All', tildePath(folders.cwd), folders.allStatus, folders.selected === '');
+    all.classList.add('all');
     all.addEventListener('click', () => selectFolder(''));
 
-    folderRow.replaceChildren(all, ...folders.folders.map(f => {
-        const b = chip('folder' + (f.path === folders.selected ? ' active' : '') + (f.exists ? '' : ' missing'),
-            f.name, f.status, maxFolderName,
-            () => [f.name, tildePath(f.path), f.exists ? folderStatusNames[f.status] : 'Folder not found', f.pinned ? 'Pinned' : '']);
-        b.setAttribute('role', 'tab');
+    folderList.replaceChildren(all, ...folders.folders.map(f => {
+        const b = folderItem(f.name, f.exists ? tildePath(f.path) : 'Folder not found', f.status, f.path === folders.selected);
+        b.classList.toggle('missing', !f.exists);
         b.dataset.path = f.path;
         b.dataset.pinned = f.pinned;
-        if (f.pinned) b.prepend(pinIcon());
+        if (f.pinned) b.querySelector('.folder-item-name').prepend(pinIcon());
         b.addEventListener('click', () => {
             if (!b.dataset.dragged) selectFolder(f.path);
         });
@@ -1058,7 +1112,31 @@ function renderFolders() {
         b.addEventListener('pointerdown', e => startFolderDrag(e, b));
         return b;
     }));
-    folderRow.querySelector('.active')?.scrollIntoView({inline: 'nearest', block: 'nearest'});
+}
+
+// folderItem builds one row of the folder menu: status, name and path, and
+// a check on the selected one.
+function folderItem(label, detail, status, active) {
+    const b = document.createElement('button');
+    b.type = 'button';
+    b.className = 'folder-item' + (active ? ' active' : '');
+    b.setAttribute('role', 'menuitemradio');
+    b.setAttribute('aria-checked', String(active));
+    b.dataset.status = status;
+    const dot = document.createElement('span');
+    dot.className = 'status';
+    const name = document.createElement('span');
+    name.className = 'folder-item-name';
+    name.append(clip(label, maxFolderName));
+    const path = document.createElement('span');
+    path.className = 'folder-item-path';
+    path.textContent = detail;
+    const check = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+    check.setAttribute('viewBox', '0 0 24 24');
+    check.classList.add('check');
+    check.innerHTML = '<path d="M5 12.5l4.5 4.5L19 7.5"/>';
+    b.append(dot, name, check, path);
+    return b;
 }
 
 function pinIcon() {
@@ -1070,47 +1148,50 @@ function pinIcon() {
 }
 
 function selectFolder(path) {
+    closePop();
+    input.focus();
     if (path === folders.selected) return;
     folders.selected = path;
-    for (const el of folderRow.children) el.classList.toggle('active', (el.dataset.path ?? '') === path);
+    renderFolders();
     Launcher.SelectFolder(path);
-    input.focus();
 }
 
-// startFolderDrag lets a folder be dragged sideways to a new place among the
-// folders with the same pinned state. A press that barely moves is a click.
+folderButton.addEventListener('click', () => togglePop(folderMenu, folderButton, 'left', renderFolderMenu));
+
+// startFolderDrag lets a folder be dragged up or down to a new place among
+// the folders with the same pinned state. A press that barely moves is a
+// click.
 function startFolderDrag(e, el) {
     if (e.button !== 0) return;
-    const startX = e.clientX;
-    const grab = e.clientX - el.getBoundingClientRect().left;
+    const startY = e.clientY;
+    const grab = e.clientY - el.getBoundingClientRect().top;
     let dragging = false;
     delete el.dataset.dragged;
 
-    const peers = () => [...folderRow.querySelectorAll('.folder:not(.all)')]
+    const peers = () => [...folderList.querySelectorAll('.folder-item:not(.all)')]
         .filter(p => p !== el && p.dataset.pinned === el.dataset.pinned);
 
     const move = ev => {
         if (!dragging) {
-            if (Math.abs(ev.clientX - startX) < 5) return;
+            if (Math.abs(ev.clientY - startY) < 5) return;
             dragging = true;
             el.dataset.dragged = '1';
             el.classList.add('dragging');
             el.setPointerCapture(ev.pointerId);
-            hideTip();
         }
-        // Move the folder before the first peer whose middle is right of
-        // the pointer, or after the last one.
+        // Move the folder before the first peer whose middle is below the
+        // pointer, or after the last one.
         const group = peers();
         const before = group.find(p => {
             const r = p.getBoundingClientRect();
-            return ev.clientX < r.left + r.width / 2;
+            return ev.clientY < r.top + r.height / 2;
         });
         if (before && before !== el.nextElementSibling) before.before(el);
         else if (!before && group.length && group[group.length - 1].nextElementSibling !== el) group[group.length - 1].after(el);
 
         el.style.transform = '';
-        const left = el.getBoundingClientRect().left;
-        el.style.transform = `translateX(${ev.clientX - grab - left}px)`;
+        const top = el.getBoundingClientRect().top;
+        el.style.transform = `translateY(${ev.clientY - grab - top}px)`;
     };
     const up = () => {
         window.removeEventListener('pointermove', move);
@@ -1121,7 +1202,7 @@ function startFolderDrag(e, el) {
         el.style.transform = '';
         // Let the click that ends the drag pass before allowing clicks again.
         setTimeout(() => delete el.dataset.dragged, 0);
-        const order = [...folderRow.querySelectorAll('.folder:not(.all)')].map(f => f.dataset.path);
+        const order = [...folderList.querySelectorAll('.folder-item:not(.all)')].map(f => f.dataset.path);
         Launcher.ReorderFolders(order);
     };
     window.addEventListener('pointermove', move);
@@ -1247,14 +1328,12 @@ function stepSession(dir) {
     openSession(activeIndex < 0 ? 0 : (activeIndex + dir + n) % n);
 }
 
-// A vertical wheel scrolls the rows sideways.
-for (const row of [folderRow, sessionRow]) {
-    row.addEventListener('wheel', e => {
-        if (Math.abs(e.deltaY) <= Math.abs(e.deltaX)) return;
-        e.preventDefault();
-        row.scrollLeft += e.deltaY;
-    }, {passive: false});
-}
+// A vertical wheel scrolls the sessions sideways.
+sessionRow.addEventListener('wheel', e => {
+    if (Math.abs(e.deltaY) <= Math.abs(e.deltaX)) return;
+    e.preventDefault();
+    sessionRow.scrollLeft += e.deltaY;
+}, {passive: false});
 
 // Session statuses roll up into the folders, so both reload together.
 Events.On('sessions:changed', () => {

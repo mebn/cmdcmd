@@ -30,6 +30,12 @@ import * as $models from "./models.js";
  */
 
 /**
+ * BlurShape is a rounded rectangle, in window points from the top left, that
+ * gets the frosted backdrop.
+ * @typedef {$models.BlurShape} BlurShape
+ */
+
+/**
  * FolderItem is one folder in the bar.
  * @typedef {$models.FolderItem} FolderItem
  */

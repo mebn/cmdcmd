@@ -279,6 +279,16 @@ export function Send(text, files) {
 }
 
 /**
+ * SetBlur blurs the desktop behind the given shapes (the cards the frontend
+ * draws) and nowhere else. It does nothing where the platform can't.
+ * @param {$models.BlurShape[] | null} shapes
+ * @returns {$CancellablePromise<void>}
+ */
+export function SetBlur(shapes) {
+    return $Call.ByID(3525701873, shapes);
+}
+
+/**
  * SetCustomCommand saves the custom agent's shell command. If the custom
  * agent is in use, it restarts with the new command.
  * @param {string} command

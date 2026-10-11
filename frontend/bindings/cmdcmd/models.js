@@ -47,6 +47,17 @@ import * as session$0 from "./internal/session/models.js";
  */
 
 /**
+ * BlurShape is a rounded rectangle, in window points from the top left, that
+ * gets the frosted backdrop.
+ * @typedef {Object} BlurShape
+ * @property {number} x
+ * @property {number} y
+ * @property {number} width
+ * @property {number} height
+ * @property {number} radius
+ */
+
+/**
  * FolderItem is one folder in the bar.
  * @typedef {Object} FolderItem
  * @property {string} path

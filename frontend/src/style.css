@@ -1,5 +1,5 @@
 /* The window is an invisible, fixed-size stage. The chat card, the input and
-   the tray below it are drawn here, so every transition is a CSS animation. */
+   the bars around it are drawn here, so every transition is a CSS animation. */
 
 :root {
     color-scheme: light dark;
@@ -24,7 +24,6 @@
     --shadow: 0 16px 40px -12px rgba(0, 0, 0, 0.55), 0 2px 8px rgba(0, 0, 0, 0.22);
     --ease: cubic-bezier(0.32, 0.72, 0, 1);
     --chat-height: calc(100vh - 340px);
-    --gap: 10px;   /* between the window card and the tray */
     --inset: 10px; /* padding inside the window card, around the composer */
 }
 
@@ -46,6 +45,21 @@
         --ok: #28a745;
         --bash: #d6338f;
         --shadow: 0 16px 40px -12px rgba(0, 0, 0, 0.22), 0 2px 8px rgba(0, 0, 0, 0.07);
+    }
+}
+
+/* On macOS the cards sit on a native blur of the desktop (see main.js), so
+   their surfaces can be thinner. */
+:root.frosted {
+    --surface: rgba(30, 30, 34, 0.6);
+    --surface-raised: rgba(46, 46, 52, 0.62);
+    --popover: rgba(40, 40, 46, 0.72);
+}
+@media (prefers-color-scheme: light) {
+    :root.frosted {
+        --surface: rgba(250, 250, 252, 0.6);
+        --surface-raised: rgba(255, 255, 255, 0.66);
+        --popover: rgba(255, 255, 255, 0.74);
     }
 }
 
@@ -165,11 +179,20 @@ svg {
 
 /* ---------- composer ---------- */
 
-#dock {
-    position: relative;
+/* One box holds the composer and, below a hairline, the bar. */
+#input-box {
     display: flex;
     flex-direction: column;
+    /* Concentric with the window card: its radius minus the inset. */
+    border-radius: 22px;
+    background: var(--surface-raised);
+    border: 0.5px solid var(--hairline);
+    box-shadow: var(--shadow);
+    transition: box-shadow 360ms var(--ease), border-color 160ms ease;
 }
+
+/* Inside the card the box needs only a soft lift, not a full shadow. */
+.expanded #input-box { box-shadow: 0 2px 10px rgba(0, 0, 0, 0.12); }
 
 #composer {
     position: relative;
@@ -179,16 +202,7 @@ svg {
     gap: 0 8px;
     min-height: 64px;
     padding: 12px;
-    /* Concentric with the window card: its radius minus the inset. */
-    border-radius: 22px;
-    background: var(--surface-raised);
-    border: 0.5px solid var(--hairline);
-    box-shadow: var(--shadow);
-    transition: box-shadow 360ms var(--ease);
 }
-
-/* Inside the card the composer needs only a soft lift, not a full shadow. */
-.expanded #composer { box-shadow: 0 2px 10px rgba(0, 0, 0, 0.12); }
 
 #input {
     flex: 1;
@@ -309,7 +323,7 @@ svg {
 .msg-attachments .file-name { opacity: 0.85; font-size: 0.9em; }
 
 /* A leading "!" runs the line as a shell command. */
-#composer.bash { border-color: color-mix(in srgb, var(--bash) 60%, transparent); }
+#input-box:has(#composer.bash) { border-color: color-mix(in srgb, var(--bash) 60%, transparent); }
 #composer.bash #input {
     font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
     font-size: 16px;
@@ -351,34 +365,18 @@ svg {
 }
 @keyframes spin { to { transform: rotate(360deg); } }
 
-/* ---------- tray ---------- */
+/* ---------- bar ---------- */
 
-/* A separate floating bar below the composer, narrower than the composer
-   and centered. The first row holds All and the folders between the New and
-   settings buttons; the second the sessions of the selected one. */
-#tray {
-    align-self: center;
-    width: 90%;
-    display: flex;
-    flex-direction: column;
-    gap: 2px;
-    margin-top: var(--gap);
-    padding: 5px 6px;
-    border-radius: 18px;
-    background: var(--surface);
-    border: 0.5px solid var(--hairline);
-    box-shadow: var(--shadow);
-    font-size: 12.5px;
-}
-
-.tray-row {
+/* The row under the composer, inside the input box: New, the folder picker,
+   the sessions of the selected folder, and settings. */
+.bar {
     display: flex;
     align-items: center;
     gap: 4px;
+    padding: 5px 6px;
+    border-top: 0.5px solid var(--hairline);
+    font-size: 12.5px;
 }
-
-/* The sessions sit under the folders, lined up with them. */
-#session-row { padding: 0 34px; }
 
 .icon-button {
     flex: none;
@@ -395,8 +393,6 @@ svg {
 .icon-button svg { width: 16px; height: 16px; }
 #attach { align-self: center; color: var(--text-3); }
 #attach svg { width: 18px; height: 18px; }
-#new svg { transition: transform 300ms var(--ease); }
-#new[aria-expanded="true"] svg { transform: rotate(45deg); }
 #settings-button svg { transition: transform 300ms var(--ease); }
 #settings-button[aria-expanded="true"] svg { transform: rotate(60deg); }
 
@@ -457,14 +453,80 @@ svg {
 }
 .session-empty { padding: 4px 12px; font-size: 12.5px; color: var(--text-3); }
 
-.folder { max-width: 180px; touch-action: none; }
+/* The folder picker, set off from the sessions by a hairline. */
+#folder-button {
+    max-width: 200px;
+    margin-right: 4px;
+    padding-right: 8px;
+    color: var(--text);
+}
+#folder-button::after {
+    content: "";
+    position: absolute;
+    right: -4px;
+    top: 6px;
+    bottom: 6px;
+    border-right: 0.5px solid var(--hairline);
+}
+#folder-button[aria-expanded="true"] { background: var(--fill-2); }
+#folder-button .chevron {
+    flex: none;
+    width: 12px;
+    height: 12px;
+    margin-left: -2px;
+    color: var(--text-3);
+    stroke-width: 2.4;
+    transition: transform 240ms var(--ease);
+}
+#folder-button[aria-expanded="true"] .chevron { transform: rotate(180deg); }
 /* A folder shows a status only when one of its sessions needs it. */
 .folder[data-status="idle"] > .status { display: none; }
 .folder.missing .chip-name { text-decoration: line-through; color: var(--text-3); }
-.folder.dragging {
+
+/* The folder menu: All, then each folder with its path. */
+#folder-menu { width: 280px; }
+.folder-item {
+    width: 100%;
+    display: grid;
+    grid-template-columns: 10px 1fr 16px;
+    align-items: center;
+    column-gap: 10px;
+    padding: 7px 10px;
+    border-radius: 9px;
+    text-align: left;
+    touch-action: none;
+    transition: background 100ms ease;
+}
+.folder-item:hover { background: var(--fill-2); }
+.folder-item[data-status="idle"] > .status { visibility: hidden; }
+.folder-item-name {
+    display: flex;
+    align-items: center;
+    gap: 5px;
+    min-width: 0;
+    font-size: 13px;
+    font-weight: 500;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+.folder-item-name .pin { flex: none; width: 11px; height: 11px; color: var(--text-3); stroke-width: 2.2; }
+.folder-item-path {
+    grid-column: 2;
+    font-size: 11.5px;
+    color: var(--text-2);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+.folder-item .check { grid-row: 1; grid-column: 3; color: var(--accent); visibility: hidden; }
+.folder-item.active .check { visibility: visible; }
+.folder-item.missing .folder-item-name { text-decoration: line-through; color: var(--text-3); }
+.folder-item.all { margin-bottom: 2px; }
+.folder-item.dragging {
+    position: relative;
     z-index: 1;
     background: var(--surface-raised);
-    color: var(--text);
     box-shadow: 0 4px 14px rgba(0, 0, 0, 0.25);
     cursor: grabbing;
     transition: none;
@@ -504,6 +566,8 @@ svg {
     background: var(--popover);
     border: 0.5px solid var(--hairline);
     box-shadow: var(--shadow), 0 0 0 0.5px rgba(0, 0, 0, 0.2);
+    -webkit-backdrop-filter: blur(24px) saturate(1.6);
+    backdrop-filter: blur(24px) saturate(1.6);
     animation: pop 200ms var(--ease);
 }
 .popover[hidden] { display: none; }
@@ -648,6 +712,8 @@ svg {
     background: var(--popover);
     border: 0.5px solid var(--hairline);
     box-shadow: 0 6px 20px -6px rgba(0, 0, 0, 0.45), 0 0 0 0.5px rgba(0, 0, 0, 0.15);
+    -webkit-backdrop-filter: blur(20px) saturate(1.6);
+    backdrop-filter: blur(20px) saturate(1.6);
     font-size: 12px;
     line-height: 1.45;
     pointer-events: none;
@@ -664,10 +730,10 @@ svg {
 /* ---------- moving the window ---------- */
 
 /* Dragging empty space in the window card (around the composer, or in the
-   chat area) moves the window; the tray and anything you click or select
+   chat area) moves the window; the bars and anything you click or select
    don't. Wails reads this property. */
 #window { --wails-draggable: drag; }
-#window .msg, #window .thinking, #input, #window button, #menu, #notice { --wails-draggable: no-drag; }
+#window .msg, #window .thinking, #input, #window button, #menu, #notice, .bar { --wails-draggable: no-drag; }
 
 /* ---------- notice ---------- */
 

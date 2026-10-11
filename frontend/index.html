@@ -17,34 +17,34 @@
                 <div id="menu" role="listbox" hidden></div>
             </div>
 
-            <form id="composer" autocomplete="off">
-                <div id="attachments"><div class="attachments-clip"><div class="attachments-track"></div></div></div>
-                <button id="attach" class="icon-button" type="button" data-tip="Attach files or images" aria-label="Attach files">
-                    <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg>
-                </button>
-                <textarea id="input" rows="1" placeholder="Ask AI" spellcheck="false" autofocus></textarea>
-                <button id="send" class="send-button" type="submit" title="Send (Enter)" aria-label="Send" disabled>
-                    <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 19V5M6 11l6-6 6 6"/></svg>
-                </button>
-            </form>
-        </section>
-
-        <div id="dock">
-            <!-- Two rows: All and the folders, then the sessions of the
-                 selected one. -->
-            <div id="tray">
-                <div class="tray-row">
-                    <button id="new" class="icon-button" type="button" data-tip="New session or folder" aria-label="New" aria-haspopup="menu" aria-expanded="false">
+            <!-- One box: the input, and below it New, the folder picker, the
+                 sessions of the selected folder and settings. -->
+            <div id="input-box">
+                <form id="composer" autocomplete="off">
+                    <div id="attachments"><div class="attachments-clip"><div class="attachments-track"></div></div></div>
+                    <button id="attach" class="icon-button" type="button" data-tip="Attach files or images" aria-label="Attach files">
                         <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg>
                     </button>
-                    <div id="folder-row" class="chip-row" role="tablist" aria-label="Folders"></div>
+                    <textarea id="input" rows="1" placeholder="Ask AI" spellcheck="false" autofocus></textarea>
+                    <button id="send" class="send-button" type="submit" title="Send (Enter)" aria-label="Send" disabled>
+                        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 19V5M6 11l6-6 6 6"/></svg>
+                    </button>
+                </form>
+                <div id="session-bar" class="bar">
+                    <button id="new" class="icon-button" type="button" data-tip="New session or folder" aria-label="New" aria-haspopup="menu" aria-expanded="false">
+                        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 4H6a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-6"/><path d="M18.4 2.6a2 2 0 0 1 2.8 2.8L12 14.6l-3.6.9.9-3.6z"/></svg>
+                    </button>
+                    <button id="folder-button" class="chip folder" type="button" aria-label="Folder" aria-haspopup="menu" aria-expanded="false">
+                        <span class="status"></span><span class="chip-name"></span>
+                        <svg class="chevron" viewBox="0 0 24 24" aria-hidden="true"><path d="M6 9l6 6 6-6"/></svg>
+                    </button>
+                    <div id="session-row" class="chip-row" role="listbox" aria-label="Sessions"></div>
                     <button id="settings-button" class="icon-button" type="button" data-tip="Settings" aria-label="Settings" aria-haspopup="dialog" aria-expanded="false">
                         <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
                     </button>
                 </div>
-                <div id="session-row" class="chip-row" role="listbox" aria-label="Sessions"></div>
             </div>
-        </div>
+        </section>
     </div>
 </div>
 
@@ -94,6 +94,10 @@
             <span class="menu-label">New folder…</span><kbd class="shortcut" data-keys="shift+mod+N"></kbd>
         </button>
     </div>
+</div>
+
+<div id="folder-menu" class="popover menu-pop" role="menu" aria-label="Folders" hidden>
+    <div class="popover-scroll"></div>
 </div>
 
 <div id="context-menu" class="popover menu-pop" role="menu" hidden>
