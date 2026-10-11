@@ -36,6 +36,11 @@ import * as $models from "./models.js";
  */
 
 /**
+ * Bounds is a rectangle in window points from the top left.
+ * @typedef {$models.Bounds} Bounds
+ */
+
+/**
  * FolderItem is one folder in the bar.
  * @typedef {$models.FolderItem} FolderItem
  */

@@ -51,3 +51,6 @@ func cursorScreenID() string {
 	}
 	return strconv.Itoa(int(hMonitor))
 }
+
+// setCardBounds does nothing: the drag that would use it is macOS only.
+func setCardBounds(Bounds) {}

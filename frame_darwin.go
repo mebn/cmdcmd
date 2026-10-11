@@ -27,10 +27,19 @@ static void cmdcmdPlaceWindow(void *nsWindow, int width, int height, int recente
 
 static int cmdcmdSnapThreshold;
 
+// The visible card, in window points from the top left. A drag keeps it, not
+// the larger transparent window around it, on screen. Empty until reported.
+static NSRect cmdcmdCard;
+
+static void cmdcmdSetCard(double x, double y, double w, double h) {
+	cmdcmdCard = NSMakeRect(x, y, w, h);
+}
+
 // Replaces the drag Wails starts on empty space. AppKit's own window drag
 // moves the window by itself until the mouse is released, so instead follow
 // the mouse here and hold the window at the center of the screen under it
-// whenever it comes within cmdcmdSnapThreshold points of it.
+// whenever it comes within cmdcmdSnapThreshold points of it. The card is
+// stopped at the edges of the screen's visible area.
 static void cmdcmdDrag(id self, SEL _cmd, NSWindow *window) {
 	dispatch_async(dispatch_get_main_queue(), ^{
 		NSPoint start = [NSEvent mouseLocation], origin = window.frame.origin;
@@ -55,12 +64,25 @@ static void cmdcmdDrag(id self, SEL _cmd, NSWindow *window) {
 				if (fabs(to.x - center.x) <= cmdcmdSnapThreshold && fabs(to.y - center.y) <= cmdcmdSnapThreshold) {
 					to = center;
 				}
-				// Keep the top edge below the menu bar, as AppKit's drag does.
-				to.y = MIN(to.y, NSMaxY(area) - size.height);
+				// Stop the card at the edges, below the menu bar and above the
+				// Dock. Without a card reported, the whole window is kept in.
+				NSRect card = cmdcmdCard;
+				if (NSIsEmptyRect(card)) card = NSMakeRect(0, 0, size.width, size.height);
+				// The card's bottom edge, measured up from the window's.
+				double bottom = size.height - NSMaxY(card);
+				to.x = MAX(MIN(to.x, NSMaxX(area) - NSMaxX(card)), NSMinX(area) - NSMinX(card));
+				to.y = MAX(MIN(to.y, NSMaxY(area) - (size.height - NSMinY(card))), NSMinY(area) - bottom);
 			}
 			if (!NSEqualPoints(to, window.frame.origin)) [window setFrameOrigin:to];
 		}
 	});
+}
+
+// The window has a (hidden) title bar, so AppKit would hold all of it below
+// the menu bar, transparent margin included. The drag keeps the card on
+// screen instead, so leave the frame as asked.
+static NSRect cmdcmdUnconstrained(id self, SEL _cmd, NSRect frame, NSScreen *screen) {
+	return frame;
 }
 
 static void cmdcmdSnapToCenter(int threshold) {
@@ -68,6 +90,10 @@ static void cmdcmdSnapToCenter(int threshold) {
 	Class delegate = objc_getClass("WebviewWindowDelegate");
 	if (delegate != nil) {
 		class_replaceMethod(delegate, @selector(startDrag:), (IMP)cmdcmdDrag, "v@:@");
+	}
+	const char *types = method_getTypeEncoding(class_getInstanceMethod([NSWindow class], @selector(constrainFrameRect:toScreen:)));
+	for (Class window in @[objc_getClass("WebviewPanel"), objc_getClass("WebviewWindow")]) {
+		class_replaceMethod(window, @selector(constrainFrameRect:toScreen:), (IMP)cmdcmdUnconstrained, types);
 	}
 }
 
@@ -115,6 +141,12 @@ func placeWindow(_ *application.App, window *application.WebviewWindow, width, h
 // center of its screen snap there while it is still being dragged.
 func snapToCenter(_ *application.WebviewWindow, threshold int) {
 	C.cmdcmdSnapToCenter(C.int(threshold))
+}
+
+// setCardBounds records where the visible card is in the window, in points
+// from the top left, so a drag can keep it on screen.
+func setCardBounds(b Bounds) {
+	C.cmdcmdSetCard(C.double(b.X), C.double(b.Y), C.double(b.Width), C.double(b.Height))
 }
 
 // lowerWindow lets a dialog cmdcmd opens lie on top of the window; it is

@@ -11,3 +11,6 @@ func placeWindow(_ *application.App, window *application.WebviewWindow, width, h
 	window.SetSize(width, height)
 	window.Center()
 }
+
+// setCardBounds does nothing: the drag that would use it is macOS only.
+func setCardBounds(Bounds) {}

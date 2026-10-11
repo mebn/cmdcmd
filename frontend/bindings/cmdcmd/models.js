@@ -58,6 +58,15 @@ import * as session$0 from "./internal/session/models.js";
  */
 
 /**
+ * Bounds is a rectangle in window points from the top left.
+ * @typedef {Object} Bounds
+ * @property {number} x
+ * @property {number} y
+ * @property {number} width
+ * @property {number} height
+ */
+
+/**
  * FolderItem is one folder in the bar.
  * @typedef {Object} FolderItem
  * @property {string} path

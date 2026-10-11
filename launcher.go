@@ -330,6 +330,20 @@ func (l *Launcher) Show() {
 	l.markSeen()
 }
 
+// Bounds is a rectangle in window points from the top left.
+type Bounds struct {
+	X      float64 `json:"x"`
+	Y      float64 `json:"y"`
+	Width  float64 `json:"width"`
+	Height float64 `json:"height"`
+}
+
+// SetCardBounds tells where the visible card is in the transparent window,
+// so dragging can stop it, rather than the window, at the screen's edges.
+func (l *Launcher) SetCardBounds(bounds Bounds) {
+	setCardBounds(bounds)
+}
+
 // Hide hides the window. The agent keeps running.
 func (l *Launcher) Hide() {
 	l.window.Hide()

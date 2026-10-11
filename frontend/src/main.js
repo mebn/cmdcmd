@@ -89,17 +89,28 @@ function surfaceShows(el) {
     return !alpha || parseFloat(alpha[1]) > 0.05;
 }
 
-let lastBlur = '';
+let lastBlur = '', lastCard = '';
 function trackBlur() {
-    const els = [document.getElementById('window'), document.getElementById('input-box'),
-        ...document.querySelectorAll('.popover:not([hidden]), #tip:not([hidden])')];
-    const shapes = els.filter(el => el.id !== 'window' || surfaceShows(el))
-        .map(blurShape)
+    const cards = [document.getElementById('window'), document.getElementById('input-box')]
+        .filter(el => el.id !== 'window' || surfaceShows(el))
+        .map(blurShape);
+    const shapes = [...cards, ...[...document.querySelectorAll('.popover:not([hidden]), #tip:not([hidden])')].map(blurShape)]
         .filter(s => s.width > 0 && s.height > 0);
     const key = JSON.stringify(shapes);
     if (key !== lastBlur) {
         lastBlur = key;
         Launcher.SetBlur(shapes);
+    }
+    // Dragging stops the visible card, not the transparent window around it,
+    // at the screen's edges.
+    const left = Math.min(...cards.map(s => s.x)), top = Math.min(...cards.map(s => s.y));
+    const card = {x: left, y: top,
+        width: Math.max(...cards.map(s => s.x + s.width)) - left,
+        height: Math.max(...cards.map(s => s.y + s.height)) - top};
+    const cardKey = JSON.stringify(card);
+    if (cardKey !== lastCard) {
+        lastCard = cardKey;
+        Launcher.SetCardBounds(card);
     }
     requestAnimationFrame(trackBlur);
 }
@@ -984,6 +995,14 @@ settingsButton.addEventListener('click', () => togglePop(settingsPop, settingsBu
     loadAgents();
 }));
 Events.On('agents:changed', loadAgents);
+
+// Pressing on empty space in the card drags the window; keep that press from
+// also starting a text selection in the messages.
+document.getElementById('window').addEventListener('mousedown', e => {
+    if (getComputedStyle(e.target).getPropertyValue('--wails-draggable').trim() === 'drag') {
+        e.preventDefault();
+    }
+});
 
 // Clicks on the empty stage around the cards act like clicking outside the
 // window: close the open popover, or hide.

@@ -289,6 +289,16 @@ export function SetBlur(shapes) {
 }
 
 /**
+ * SetCardBounds tells where the visible card is in the transparent window,
+ * so dragging can stop it, rather than the window, at the screen's edges.
+ * @param {$models.Bounds} bounds
+ * @returns {$CancellablePromise<void>}
+ */
+export function SetCardBounds(bounds) {
+    return $Call.ByID(533742215, bounds);
+}
+
+/**
  * SetCustomCommand saves the custom agent's shell command. If the custom
  * agent is in use, it restarts with the new command.
  * @param {string} command
