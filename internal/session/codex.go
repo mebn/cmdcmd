@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"sync"
 )
@@ -70,9 +69,7 @@ func (c *Codex) turn(text string) {
 	}
 	args = append(args, "-") // read the prompt from stdin
 
-	cmd := exec.Command(opts.Path, args...)
-	cmd.Dir = opts.Cwd
-	cmd.Env = opts.Env
+	cmd := opts.command(args...)
 
 	finished := false
 	stderr, err := runLines(&c.turns, cmd, text, func(line []byte) {

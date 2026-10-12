@@ -1,9 +1,6 @@
 package session
 
-import (
-	"os/exec"
-	"strings"
-)
+import "strings"
 
 // Custom runs a user-configured command once per message: the message goes to
 // its stdin and its stdout streams back as the reply. It keeps no memory
@@ -38,9 +35,7 @@ func (c *Custom) Configure(model, effort string) {}
 func (c *Custom) Close() { c.turns.close() }
 
 func (c *Custom) turn(text string) {
-	cmd := exec.Command(c.opts.Path, c.opts.Args...)
-	cmd.Dir = c.opts.Cwd
-	cmd.Env = c.opts.Env
+	cmd := c.opts.command(c.opts.Args...)
 
 	c.onEvent(Event{Type: "block"})
 	stderr, err := runLines(&c.turns, cmd, text, func(line []byte) {

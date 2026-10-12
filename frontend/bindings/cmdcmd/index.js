@@ -41,6 +41,13 @@ import * as $models from "./models.js";
  */
 
 /**
+ * Environment is where agents run on Windows: "windows", "wsl" or "both".
+ * Supported is false on other platforms; Distro is the WSL distro, "" if
+ * WSL isn't installed.
+ * @typedef {$models.Environment} Environment
+ */
+
+/**
  * FolderItem is one folder in the bar.
  * @typedef {$models.FolderItem} FolderItem
  */

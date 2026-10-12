@@ -15,6 +15,7 @@ import (
 
 	"cmdcmd/internal/config"
 	"cmdcmd/internal/session"
+	"cmdcmd/internal/wsl"
 )
 
 // Session statuses, shown as a symbol in the sessions bar.
@@ -77,6 +78,7 @@ type SessionItem struct {
 	Status  string    `json:"status"`
 	Cwd     string    `json:"cwd"`
 	Pinned  bool      `json:"pinned"`
+	WSL     bool      `json:"wsl"` // it runs in WSL rather than on Windows
 }
 
 // SessionList is the current agent's sessions, newest first, and the key of
@@ -119,18 +121,33 @@ func (l *Launcher) newAgent(ls *liveSession, resumeID string) session.Agent {
 		Effort:   cfg.Effort,
 		ResumeID: resumeID,
 	}
+	// A session in a WSL folder runs its agent there, found on the PATH of
+	// the login shell rather than by the Windows-side settings.
+	inWSL := wsl.IsPath(ls.cwd)
+	if inWSL {
+		opts.Distro = wsl.Distro()
+	}
 	var a session.Agent
 	onEvent := func(ev session.Event) { l.onAgentEvent(ls, a, ev) }
 	switch ls.kind {
 	case "codex":
 		opts.Path = cfg.FindCodex(l.env)
+		if inWSL {
+			opts.Path = "codex"
+		}
 		opts.Sandbox = cfg.CodexSandbox
 		a = session.NewCodex(opts, onEvent)
 	case "custom":
 		opts.Path, opts.Args = config.Shell(cfg.Custom.Command)
+		if inWSL {
+			opts.Path, opts.Args = "sh", []string{"-c", cfg.Custom.Command}
+		}
 		a = session.NewCustom(opts, onEvent)
 	default:
 		opts.Path = cfg.FindClaude(l.env)
+		if inWSL {
+			opts.Path = "claude"
+		}
 		opts.PermissionMode = cfg.PermissionMode
 		a = session.NewClaude(opts, onEvent)
 	}
@@ -313,8 +330,13 @@ func (l *Launcher) RunShell(command string) ShellResult {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
 	defer cancel()
 	path, args := config.Shell(command)
+	if wsl.IsPath(cwd) {
+		path, args = wsl.Command(wsl.Distro(), cwd, "sh", "-c", command)
+	}
 	cmd := exec.CommandContext(ctx, path, args...)
-	cmd.Dir = cwd
+	if !wsl.IsPath(cwd) {
+		cmd.Dir = cwd
+	}
 	cmd.Env = l.env
 	session.HideWindow(cmd)
 	out, err := cmd.CombinedOutput()
@@ -361,7 +383,7 @@ func (l *Launcher) NewSession() {
 func (l *Launcher) GetSessions() SessionList {
 	l.mu.Lock()
 	kind, dirs := l.cfg.Agent, l.scopeDirs()
-	inScope := func(cwd string) bool { return slices.Contains(dirs, filepath.Clean(cwd)) }
+	inScope := func(cwd string) bool { return slices.Contains(dirs, wsl.Clean(cwd)) }
 	pinned := map[string]bool{}
 	for _, id := range l.state.Pinned {
 		pinned[id] = true
@@ -382,7 +404,7 @@ func (l *Launcher) GetSessions() SessionList {
 		}
 		list.Sessions = append(list.Sessions, SessionItem{
 			Key: ls.key, ID: ls.id, Title: ls.title, Updated: ls.updated, Status: ls.status,
-			Cwd: ls.cwd, Pinned: pinned[ls.id],
+			Cwd: ls.cwd, Pinned: pinned[ls.id], WSL: wsl.IsPath(ls.cwd),
 		})
 	}
 	l.mu.Unlock()
@@ -407,6 +429,7 @@ func (l *Launcher) GetSessions() SessionList {
 		}
 		list.Sessions = append(list.Sessions, SessionItem{
 			ID: s.ID, Title: s.Title, Updated: s.Updated, Status: statusFor(s.Running), Cwd: s.Cwd, Pinned: pinned[s.ID],
+			WSL: wsl.IsPath(s.Cwd),
 		})
 	}
 	// A live Claude session can also be renamed or have turns run from Claude
@@ -651,12 +674,13 @@ func (l *Launcher) CopyResumeCommand(item SessionItem) error {
 	return nil
 }
 
-// shellQuote quotes a path for the system shell when it needs it.
+// shellQuote quotes a path for the shell it is used in when it needs it: a
+// WSL path for a Linux shell, any other for the system shell.
 func shellQuote(s string) string {
 	if !strings.ContainsAny(s, " '\"$`\\!&;|<>()*?[]{}#~") {
 		return s
 	}
-	if runtime.GOOS == "windows" {
+	if runtime.GOOS == "windows" && !wsl.IsPath(s) {
 		return `"` + s + `"`
 	}
 	return "'" + strings.ReplaceAll(s, "'", `'\''`) + "'"

@@ -46,6 +46,31 @@ type Config struct {
 	// Custom is a command that gets each message on stdin and replies on
 	// stdout, set from the agent picker.
 	Custom CustomAgent `json:"custom"`
+
+	// Environment is where agents run on Windows: "windows", "wsl" or
+	// "both". It picks which folders and sessions are shown; each runs on
+	// the side it belongs to. Other platforms ignore it.
+	Environment string `json:"environment"`
+	// WSLDistro is the WSL distro to use; "" means the default one.
+	WSLDistro string `json:"wslDistro,omitempty"`
+}
+
+// Environments where agents can run on Windows.
+const (
+	EnvWindows = "windows"
+	EnvWSL     = "wsl"
+	EnvBoth    = "both"
+)
+
+// UsesWindows reports whether folders and sessions on Windows itself (or on
+// the host, on other platforms) are shown.
+func (c Config) UsesWindows() bool {
+	return runtime.GOOS != "windows" || c.Environment != EnvWSL
+}
+
+// UsesWSL reports whether folders and sessions in WSL are shown.
+func (c Config) UsesWSL() bool {
+	return runtime.GOOS == "windows" && (c.Environment == EnvWSL || c.Environment == EnvBoth)
 }
 
 // CustomAgent is a user-defined agent: a shell command line such as
@@ -91,6 +116,7 @@ func defaults() Config {
 		PermissionMode: "auto",
 		CodexSandbox:   "workspace-write",
 		Custom:         CustomAgent{Name: "Custom"},
+		Environment:    EnvWindows,
 	}
 }
 

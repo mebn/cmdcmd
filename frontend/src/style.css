@@ -48,8 +48,8 @@
     }
 }
 
-/* On macOS the cards sit on a native blur of the desktop (see main.js), so
-   their surfaces can be thinner. */
+/* On macOS and Windows the cards sit on a native blur of the desktop (see
+   main.js), so their surfaces can be thinner. */
 :root.frosted {
     --surface: rgba(30, 30, 34, 0.6);
     --surface-raised: rgba(46, 46, 52, 0.62);

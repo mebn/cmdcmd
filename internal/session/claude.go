@@ -179,9 +179,7 @@ func (s *Claude) start() error {
 		args = append(args, "--resume", s.sessionID)
 	}
 
-	cmd := exec.Command(s.opts.Path, args...)
-	cmd.Dir = s.opts.Cwd
-	cmd.Env = s.opts.Env
+	cmd := s.opts.command(args...)
 	hideWindow(cmd)
 	stdin, err := cmd.StdinPipe()
 	if err != nil {

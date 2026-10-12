@@ -83,7 +83,17 @@ var fileTemplate = template.Must(template.New("config").Funcs(template.FuncMap{
     "name": {{json .Custom.Name}},
     // Shell command line, e.g. "ollama run llama3". "" disables the agent.
     "command": {{json .Custom.Command}}
-  }
+  },
+
+  // Windows only: where agents run. Also set in Settings.
+  //   "windows"  Claude Code installed on Windows (default)
+  //   "wsl"      Claude Code installed in WSL
+  //   "both"     folders and sessions from both; each runs where it belongs
+  "environment": {{json .Environment}},
+
+  // Windows only: the WSL distro to use. "" is the default distro
+  // (wsl --set-default).
+  "wslDistro": {{json .WSLDistro}}
 }
 `))
 

@@ -3,7 +3,11 @@
 // events.
 package session
 
-import "os/exec"
+import (
+	"os/exec"
+
+	"cmdcmd/internal/wsl"
+)
 
 // Event is what the UI receives. Type is one of:
 //
@@ -45,7 +49,7 @@ type Model struct {
 type Options struct {
 	Path   string // the CLI binary
 	Args   []string
-	Cwd    string
+	Cwd    string // a Linux path when Distro is set
 	Env    []string
 	Model  string
 	Effort string
@@ -56,6 +60,25 @@ type Options struct {
 
 	PermissionMode string // claude --permission-mode
 	Sandbox        string // codex sandbox_mode
+
+	// Distro runs the agent in this WSL distro through wsl.exe, finding Path
+	// on the PATH of the user's login shell there.
+	Distro string
+}
+
+// command builds the process for the agent CLI with the given arguments,
+// in opts.Cwd, on Windows or in WSL.
+func (opts Options) command(args ...string) *exec.Cmd {
+	var cmd *exec.Cmd
+	if opts.Distro != "" {
+		program, wslArgs := wsl.Command(opts.Distro, opts.Cwd, opts.Path, args...)
+		cmd = exec.Command(program, wslArgs...)
+	} else {
+		cmd = exec.Command(opts.Path, args...)
+		cmd.Dir = opts.Cwd
+	}
+	cmd.Env = opts.Env
+	return cmd
 }
 
 // Agent is one conversation with an agent CLI.

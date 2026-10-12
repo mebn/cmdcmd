@@ -2,6 +2,7 @@ package main
 
 import (
 	"errors"
+	"runtime"
 	"slices"
 	"strings"
 	"sync"
@@ -10,6 +11,7 @@ import (
 	"cmdcmd/internal/config"
 	"cmdcmd/internal/hotkey"
 	"cmdcmd/internal/session"
+	"cmdcmd/internal/wsl"
 
 	"github.com/wailsapp/wails/v3/pkg/application"
 	"github.com/wailsapp/wails/v3/pkg/events"
@@ -55,6 +57,7 @@ func NewLauncher() *Launcher {
 		l.notice = "Could not read config: " + err.Error()
 	}
 	l.cfg = cfg
+	wsl.Use(cfg.WSLDistro)
 	if l.state, err = config.LoadState(); err != nil {
 		l.notice = "Could not read state: " + err.Error()
 	}
@@ -178,14 +181,18 @@ func (l *Launcher) GetAgents() []AgentInfo {
 		claudeModels = fallbackClaudeModels
 	}
 
+	// An agent is available if it is installed on a side in use.
+	installed := func(name, path string) bool {
+		return (cfg.UsesWindows() && config.Found(path)) || (cfg.UsesWSL() && wsl.Has(name))
+	}
 	claude := AgentInfo{ID: "claude", Name: "Claude", Models: claudeModels,
-		Available: config.Found(cfg.FindClaude(l.env))}
+		Available: installed("claude", cfg.FindClaude(l.env))}
 	if !claude.Available {
 		claude.Reason = "claude CLI not found"
 	}
 
 	codex := AgentInfo{ID: "codex", Name: "Codex", Models: session.CodexModels(),
-		Available: config.Found(cfg.FindCodex(l.env))}
+		Available: installed("codex", cfg.FindCodex(l.env))}
 	if !codex.Available {
 		codex.Reason = "codex CLI not found"
 	}
@@ -275,6 +282,55 @@ func (l *Launcher) SetCustomCommand(command string) error {
 		l.NewSession()
 	}
 	return cfg.Save()
+}
+
+// Environment is where agents run on Windows: "windows", "wsl" or "both".
+// Supported is false on other platforms; Distro is the WSL distro, "" if
+// WSL isn't installed.
+type Environment struct {
+	Supported bool   `json:"supported"`
+	Mode      string `json:"mode"`
+	Distro    string `json:"distro"`
+}
+
+// GetEnvironment returns where agents run.
+func (l *Launcher) GetEnvironment() Environment {
+	l.mu.Lock()
+	mode := l.cfg.Environment
+	l.mu.Unlock()
+	return Environment{Supported: runtime.GOOS == "windows", Mode: mode, Distro: wsl.Distro()}
+}
+
+// SetEnvironment chooses where agents run and saves the choice. If the
+// session on screen is on a side no longer shown, a new one replaces it.
+func (l *Launcher) SetEnvironment(mode string) error {
+	switch mode {
+	case config.EnvWindows:
+	case config.EnvWSL, config.EnvBoth:
+		if !wsl.Available() {
+			return errors.New("WSL is not installed")
+		}
+		wsl.Home() // look it up now rather than while holding l.mu
+	default:
+		return errors.New("unknown environment " + mode)
+	}
+	l.mu.Lock()
+	changed := l.cfg.Environment != mode
+	l.cfg.Environment = mode
+	cfg := l.cfg
+	hidden := !l.shows(l.current.cwd)
+	l.mu.Unlock()
+	if !changed {
+		return nil
+	}
+	if hidden {
+		l.NewSession()
+	}
+	err := cfg.Save()
+	l.app.Event.Emit("agents:changed")
+	l.app.Event.Emit("folders:changed")
+	l.app.Event.Emit("sessions:changed")
+	return err
 }
 
 // GetCommands returns the slash commands the current agent accepts.

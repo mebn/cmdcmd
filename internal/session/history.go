@@ -15,6 +15,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"cmdcmd/internal/wsl"
 )
 
 // SessionInfo is a past conversation that can be resumed.
@@ -39,11 +41,39 @@ const maxSessions = 30
 
 // claudeProjectDir is where Claude Code keeps transcripts for sessions run in
 // cwd: ~/.claude/projects/ plus cwd with every non-alphanumeric character
-// replaced by "-".
+// replaced by "-". For a directory in WSL that is the WSL user's home, read
+// through its \wsl$ share. It is "" if there is no such home.
 func claudeProjectDir(cwd string) string {
-	home, _ := os.UserHomeDir()
+	root := claudeProjects(wsl.IsPath(cwd))
+	if root == "" {
+		return ""
+	}
 	slug := regexp.MustCompile(`[^a-zA-Z0-9]`).ReplaceAllString(cwd, "-")
-	return filepath.Join(home, ".claude", "projects", slug)
+	return filepath.Join(root, slug)
+}
+
+// claudeTranscript is the transcript of the session with the given ID run
+// in cwd, "" if there is nowhere to look.
+func claudeTranscript(cwd, id string) string {
+	dir := claudeProjectDir(cwd)
+	if dir == "" {
+		return ""
+	}
+	return filepath.Join(dir, id+".jsonl")
+}
+
+// claudeProjects is ~/.claude/projects on Windows (or the host) or in WSL,
+// "" if WSL has no home folder.
+func claudeProjects(inWSL bool) string {
+	if inWSL {
+		home := wsl.Home()
+		if home == "" {
+			return ""
+		}
+		return filepath.Join(wsl.Native(home), ".claude", "projects")
+	}
+	home, _ := os.UserHomeDir()
+	return filepath.Join(home, ".claude", "projects")
 }
 
 // ClaudeSessions lists the most recent Claude Code sessions run in cwd,
@@ -190,12 +220,12 @@ func scanMeta(path string) claudeMeta {
 // ClaudeRunning reports whether a turn is in progress in a Claude Code
 // session run in cwd, judging by its transcript.
 func ClaudeRunning(cwd, id string) bool {
-	return readMeta(filepath.Join(claudeProjectDir(cwd), id+".jsonl")).running
+	return readMeta(claudeTranscript(cwd, id)).running
 }
 
 // ClaudeTitle returns a Claude Code session's title, "" if it has none yet.
 func ClaudeTitle(cwd, id string) string {
-	return readMeta(filepath.Join(claudeProjectDir(cwd), id+".jsonl")).title
+	return readMeta(claudeTranscript(cwd, id)).title
 }
 
 // ClaudeBusy reports whether any session run in cwd has a turn in progress.
@@ -218,7 +248,7 @@ func ClaudeBusy(cwd string) bool {
 // RenameClaude names a Claude Code session the way /rename does, by adding a
 // custom-title record to its transcript; the newest one wins.
 func RenameClaude(cwd, id, title string) error {
-	return appendLine(filepath.Join(claudeProjectDir(cwd), id+".jsonl"), map[string]string{
+	return appendLine(claudeTranscript(cwd, id), map[string]string{
 		"type": "custom-title", "customTitle": title, "sessionId": id,
 	})
 }
@@ -251,7 +281,7 @@ func appendLine(path string, record any) error {
 
 // DeleteClaude deletes the transcript of a Claude Code session run in cwd.
 func DeleteClaude(cwd, id string) error {
-	return os.Remove(filepath.Join(claudeProjectDir(cwd), id+".jsonl"))
+	return os.Remove(claudeTranscript(cwd, id))
 }
 
 // ClaudeHistory returns the messages of a Claude Code session run in cwd,
@@ -259,7 +289,7 @@ func DeleteClaude(cwd, id string) error {
 func ClaudeHistory(cwd, id string) ([]HistoryItem, int64) {
 	var out []HistoryItem
 	var offset int64
-	eachLine(filepath.Join(claudeProjectDir(cwd), id+".jsonl"), func(line []byte) bool {
+	eachLine(claudeTranscript(cwd, id), func(line []byte) bool {
 		if line[len(line)-1] != '\n' {
 			return false // still being written; ClaudeTail picks it up
 		}
@@ -272,7 +302,7 @@ func ClaudeHistory(cwd, id string) ([]HistoryItem, int64) {
 
 // ClaudeSize returns the length of a session's transcript.
 func ClaudeSize(cwd, id string) int64 {
-	info, err := os.Stat(filepath.Join(claudeProjectDir(cwd), id+".jsonl"))
+	info, err := os.Stat(claudeTranscript(cwd, id))
 	if err != nil {
 		return 0
 	}
@@ -288,7 +318,7 @@ const cmdcmdEntrypoint = "sdk-cli"
 // Code in a terminal or an IDE) and the offset to go on from. Records from
 // claude -p are skipped: cmdcmd already showed those as they streamed.
 func ClaudeTail(cwd, id string, offset int64) ([]HistoryItem, int64) {
-	f, err := os.Open(filepath.Join(claudeProjectDir(cwd), id+".jsonl"))
+	f, err := os.Open(claudeTranscript(cwd, id))
 	if err != nil {
 		return nil, offset
 	}
@@ -327,18 +357,21 @@ type ClaudeProject struct {
 	Updated time.Time // when its newest session last changed
 }
 
-// projectCwds caches the directory each ~/.claude/projects folder stands
-// for; the folder name alone is ambiguous, so it is read from a transcript.
+// projectCwds caches the directory each ~/.claude/projects folder (by its
+// path) stands for; the folder name alone is ambiguous, so it is read from a
+// transcript.
 var projectCwds = struct {
 	sync.Mutex
 	m map[string]string
 }{m: map[string]string{}}
 
 // ClaudeProjects lists the directories Claude Code has run sessions in,
-// most recently used first.
-func ClaudeProjects() []ClaudeProject {
-	home, _ := os.UserHomeDir()
-	root := filepath.Join(home, ".claude", "projects")
+// most recently used first: Claude Code on Windows (or the host), or in WSL.
+func ClaudeProjects(inWSL bool) []ClaudeProject {
+	root := claudeProjects(inWSL)
+	if root == "" {
+		return nil
+	}
 	dirs, err := os.ReadDir(root)
 	if err != nil {
 		return nil
@@ -364,12 +397,12 @@ func ClaudeProjects() []ClaudeProject {
 			continue
 		}
 		projectCwds.Lock()
-		cwd, ok := projectCwds.m[d.Name()]
+		cwd, ok := projectCwds.m[dir]
 		projectCwds.Unlock()
 		if !ok {
 			cwd = transcriptCwd(newest)
 			projectCwds.Lock()
-			projectCwds.m[d.Name()] = cwd
+			projectCwds.m[dir] = cwd
 			projectCwds.Unlock()
 		}
 		if cwd != "" {
@@ -389,7 +422,7 @@ func transcriptCwd(path string) string {
 			Cwd string `json:"cwd"`
 		}
 		if json.Unmarshal(line, &r) == nil && r.Cwd != "" {
-			cwd = filepath.Clean(r.Cwd)
+			cwd = wsl.Clean(r.Cwd)
 			return false
 		}
 		return true

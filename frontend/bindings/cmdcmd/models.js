@@ -67,6 +67,16 @@ import * as session$0 from "./internal/session/models.js";
  */
 
 /**
+ * Environment is where agents run on Windows: "windows", "wsl" or "both".
+ * Supported is false on other platforms; Distro is the WSL distro, "" if
+ * WSL isn't installed.
+ * @typedef {Object} Environment
+ * @property {boolean} supported
+ * @property {string} mode
+ * @property {string} distro
+ */
+
+/**
  * FolderItem is one folder in the bar.
  * @typedef {Object} FolderItem
  * @property {string} path
@@ -74,6 +84,7 @@ import * as session$0 from "./internal/session/models.js";
  * @property {boolean} pinned
  * @property {boolean} exists
  * @property {string} status - the most pressing status of its live sessions
+ * @property {boolean} wsl - the folder is in WSL rather than on Windows
  */
 
 /**
@@ -83,8 +94,11 @@ import * as session$0 from "./internal/session/models.js";
  * @property {string} selected
  * @property {string} cwd
  * @property {string} home
+ * @property {string} wslHome - the home folder in WSL, when it is used
  * @property {string} allStatus
  * @property {FolderItem[] | null} folders
+ * @property {boolean} mixed - Mixed is set when folders and sessions from both Windows and WSL are shown, so each says which side it is on; WSLName names the distro.
+ * @property {string} wslName
  */
 
 /**
@@ -123,6 +137,7 @@ import * as session$0 from "./internal/session/models.js";
  * @property {string} status
  * @property {string} cwd
  * @property {boolean} pinned
+ * @property {boolean} wsl - it runs in WSL rather than on Windows
  */
 
 /**

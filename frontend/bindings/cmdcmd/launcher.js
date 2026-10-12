@@ -94,6 +94,14 @@ export function GetCommands() {
 }
 
 /**
+ * GetEnvironment returns where agents run.
+ * @returns {$CancellablePromise<$models.Environment>}
+ */
+export function GetEnvironment() {
+    return $Call.ByID(782535781);
+}
+
+/**
  * GetFolders lists the folders in the bar, first adding any Claude Code has
  * been used in.
  * @returns {$CancellablePromise<$models.FolderList>}
@@ -306,6 +314,16 @@ export function SetCardBounds(bounds) {
  */
 export function SetCustomCommand(command) {
     return $Call.ByID(2153164880, command);
+}
+
+/**
+ * SetEnvironment chooses where agents run and saves the choice. If the
+ * session on screen is on a side no longer shown, a new one replaces it.
+ * @param {string} mode
+ * @returns {$CancellablePromise<void>}
+ */
+export function SetEnvironment(mode) {
+    return $Call.ByID(1183541289, mode);
 }
 
 /**

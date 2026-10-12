@@ -70,10 +70,11 @@ function updateLayout() {
 
 // ---------- frosted backdrop ----------
 
-// On macOS the cards are frosted: the desktop behind them shows through
-// blurred. The blur is native and covers only the shapes reported here, so
-// every frame the cards' outlines are measured and sent when they change.
-const frosted = /Mac/.test(navigator.platform);
+// On macOS and Windows the cards are frosted: the desktop behind them shows
+// through blurred. The blur is native and covers only the shapes reported
+// here, so every frame the cards' outlines are measured and sent when they
+// change.
+const frosted = /Mac|Win/.test(navigator.platform);
 document.documentElement.classList.toggle('frosted', frosted);
 
 function blurShape(el) {
@@ -742,7 +743,7 @@ function tipFor(el) {
 
 function showTip(el) {
     const lines = tipFor(el);
-    if (!lines?.length || openPop || el.classList.contains('dragging')) return;
+    if (!lines?.length || (openPop && !openPop.el.contains(el)) || el.classList.contains('dragging')) return;
     tip.replaceChildren(...lines.filter(Boolean).map((line, i) => {
         const div = document.createElement('div');
         div.className = i === 0 ? 'tip-title' : 'tip-line';
@@ -765,7 +766,7 @@ function hideTip() {
 }
 
 document.addEventListener('mouseover', e => {
-    const el = e.target.closest('[data-tip], .chip');
+    const el = e.target.closest('[data-tip], .chip, .folder-item');
     if (el === tipTarget) return;
     hideTip();
     if (!el) return;
@@ -843,11 +844,11 @@ function showContextMenu(e, items) {
     showPop(contextMenu, point, 'left');
 }
 
-// ---------- settings: agent, model, effort ----------
+// ---------- settings: agent, model, effort, environment ----------
 
 // The gear in the bar opens a popover with one expandable section each for
-// the agent, model and effort; a section's header shows the current choice.
-// Choosing an option keeps the popover open.
+// the agent, model and effort, and on Windows where agents run; a section's
+// header shows the current choice. Choosing an option keeps the popover open.
 const settingsPop = document.getElementById('settings-pop');
 const settingsButton = document.getElementById('settings-button');
 const sections = Object.fromEntries([...settingsPop.querySelectorAll('.expander')].map(el => [el.dataset.kind, el]));
@@ -855,6 +856,8 @@ const effortNames = {minimal: 'Minimal', low: 'Low', medium: 'Medium', high: 'Hi
 
 let agents = [];
 let selection = {agent: 'claude', model: '', effort: ''};
+let environment = {supported: false, mode: 'windows', distro: ''};
+const environmentNames = {windows: 'Windows', wsl: 'WSL', both: 'Both'};
 
 for (const section of Object.values(sections)) {
     const head = section.querySelector('.expander-head');
@@ -895,6 +898,21 @@ function options(kind) {
             pick: () => choose({agent: a.id, model: '', effort: ''}),
         }));
     }
+    if (kind === 'environment') {
+        if (!environment.supported) return [];
+        const wsl = environment.distro ? `WSL (${environment.distro})` : 'WSL';
+        return [
+            {mode: 'windows', label: 'Windows', description: 'Claude Code installed on Windows'},
+            {mode: 'wsl', label: wsl, description: 'Claude Code installed in WSL'},
+            {mode: 'both', label: 'Both', description: 'Folders and sessions from each'},
+        ].map(o => ({
+            ...o,
+            description: o.mode === 'windows' || environment.distro ? o.description : 'WSL is not installed',
+            active: o.mode === environment.mode,
+            disabled: o.mode !== 'windows' && !environment.distro,
+            pick: () => chooseEnvironment(o.mode),
+        }));
+    }
     if (kind === 'model') {
         const model = currentModel();
         return (currentAgent()?.models ?? []).map(m => ({
@@ -926,6 +944,7 @@ function renderSettings(force = false) {
         agent: currentAgent()?.name ?? 'Claude',
         model: modelName(currentModel()),
         effort: selection.effort ? (effortNames[selection.effort] ?? selection.effort) : 'Auto',
+        environment: environmentNames[environment.mode] ?? 'Windows',
     };
     settingsButton.dataset.tip = ['Settings', values.agent, values.model,
         currentModel()?.efforts?.length ? values.effort + ' effort' : ''].filter(Boolean).join(' · ');
@@ -962,6 +981,18 @@ function optionButton(o) {
     return b;
 }
 
+async function chooseEnvironment(mode) {
+    if (mode === environment.mode) return;
+    environment = {...environment, mode};
+    renderSettings();
+    try {
+        await Launcher.SetEnvironment(mode);
+    } catch (err) {
+        if (view) addText(view, 'system error', String(err));
+        loadAgents();
+    }
+}
+
 async function choose(next) {
     const agentChanged = next.agent !== selection.agent;
     selection = next;
@@ -984,7 +1015,7 @@ function timeAgo(iso) {
 }
 
 async function loadAgents() {
-    [agents, selection] = await Promise.all([Launcher.GetAgents(), Launcher.GetSelection()]);
+    [agents, selection, environment] = await Promise.all([Launcher.GetAgents(), Launcher.GetSelection(), Launcher.GetEnvironment()]);
     renderSettings();
     repositionPop();
 }
@@ -1055,18 +1086,26 @@ const maxFolderName = 24;
 const maxSessionName = 36;
 const maxTitle = 100; // matches the backend's limit
 
-let folders = {selected: '', cwd: '', home: '', allStatus: 'idle', folders: []};
+let folders = {selected: '', cwd: '', home: '', wslHome: '', allStatus: 'idle', folders: [], mixed: false, wslName: ''};
 
 function clip(text, max) {
     return text.length > max ? text.slice(0, max - 1).trimEnd() + '…' : text;
 }
 
 // tildePath shortens a path in the home folder to ~/….
+// A Linux path (in WSL, on Windows) is shortened by the home folder there.
 function tildePath(path) {
-    const home = folders.home;
+    const home = path?.startsWith('/') && folders.wslHome ? folders.wslHome : folders.home;
     if (!home || !path) return path ?? '';
     if (path === home) return '~';
     return path.startsWith(home + '/') || path.startsWith(home + '\\') ? '~' + path.slice(home.length) : path;
+}
+
+// sideName says whether a folder or session is in WSL or on Windows, when
+// both are shown; otherwise it is ''.
+function sideName(wsl) {
+    if (!folders.mixed) return '';
+    return wsl ? `WSL (${folders.wslName})` : 'Windows';
 }
 
 // chip builds a pill for the session row.
@@ -1102,7 +1141,7 @@ function renderFolders() {
     folderButton.classList.toggle('missing', !!f && !f.exists);
     folderButton.querySelector('.chip-name').textContent = clip(f ? f.name : 'All', maxFolderName);
     folderButton._tip = () => f
-        ? [f.name, tildePath(f.path), f.exists ? folderStatusNames[f.status] : 'Folder not found', f.pinned ? 'Pinned' : '']
+        ? [f.name, tildePath(f.path), f.exists ? folderStatusNames[f.status] : 'Folder not found', f.pinned ? 'Pinned' : '', sideName(f.wsl)]
         : ['All folders', `New sessions start in ${tildePath(folders.cwd)}`, folderStatusNames[folders.allStatus]];
     if (openPop?.el === folderMenu && !folderList.querySelector('.dragging')) renderFolderMenu();
 }
@@ -1117,6 +1156,7 @@ function renderFolderMenu() {
         b.classList.toggle('missing', !f.exists);
         b.dataset.path = f.path;
         b.dataset.pinned = f.pinned;
+        b._tip = () => folders.mixed ? [f.name, sideName(f.wsl)] : null;
         if (f.pinned) b.querySelector('.folder-item-name').prepend(pinIcon());
         b.addEventListener('click', () => {
             if (!b.dataset.dragged) selectFolder(f.path);
@@ -1275,7 +1315,7 @@ function renderSessions() {
     sessionRow.replaceChildren(...sessions.sessions.map((s, i) => {
         const title = s.title || 'New session';
         const b = chip('session' + (i === activeIndex ? ' active' : ''), title, s.status, maxSessionName,
-            () => [title, tildePath(s.cwd), `${statusNames[s.status] ?? ''} · ${timeAgo(s.updated)}`, s.pinned ? 'Pinned' : '']);
+            () => [title, tildePath(s.cwd), `${statusNames[s.status] ?? ''} · ${timeAgo(s.updated)}`, s.pinned ? 'Pinned' : '', sideName(s.wsl)]);
         b.setAttribute('role', 'option');
         if (s.pinned) b.prepend(pinIcon());
         b.addEventListener('click', () => openSession(i));
