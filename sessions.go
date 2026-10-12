@@ -40,6 +40,7 @@ type liveSession struct {
 	updated time.Time // when the status last changed; the bar sorts by it
 	status  string
 	busy    int    // turns sent but not finished
+	tasks   int    // background tasks (shells, agents) the agent has running
 	shell   string // output of ! commands, sent along with the next message
 
 	// The transcript is followed while the session is on screen, to show
@@ -176,12 +177,20 @@ func (l *Launcher) onAgentEvent(ls *liveSession, a session.Agent, ev session.Eve
 		if len(ev.Models) > 0 {
 			l.claudeModels = ev.Models
 		}
+	case "tasks":
+		ls.tasks = len(ev.Tasks)
+	case "start":
+		if ls.busy == 0 {
+			ls.busy = 1
+			ls.status = statusRunning
+			ls.updated = time.Now()
+		}
 	case "done", "exit":
 		ls.updated = time.Now()
 		if ls.busy > 0 {
 			ls.busy--
 		}
-		if ev.Type == "exit" {
+		if ev.Type == "exit" || ev.Idle {
 			ls.busy = 0
 		}
 		if ls.busy == 0 {
@@ -193,8 +202,9 @@ func (l *Launcher) onAgentEvent(ls *liveSession, a session.Agent, ev session.Eve
 			default:
 				ls.status = statusWaiting
 			}
-			// A finished background session needs no process.
-			if !current {
+			// A finished background session needs no process, unless it
+			// has background tasks running, which would die with it.
+			if !current && ls.tasks == 0 {
 				ls.agent = nil
 				go a.Close()
 			}
@@ -244,12 +254,12 @@ func (l *Launcher) startAgent() {
 	}()
 }
 
-// leave steps away from the current session. One with a turn in progress
-// keeps running in the background; any other is closed and forgotten (it is
-// still on disk). Callers must hold l.mu.
+// leave steps away from the current session. One with a turn in progress or
+// background tasks running keeps running in the background; any other is
+// closed and forgotten (it is still on disk). Callers must hold l.mu.
 func (l *Launcher) leave() {
 	ls := l.current
-	if ls == nil || ls.busy > 0 {
+	if ls == nil || ls.busy > 0 || ls.tasks > 0 {
 		return
 	}
 	if ls.agent != nil {
@@ -277,7 +287,7 @@ func (l *Launcher) emitOpened(opened OpenedSession) {
 func (l *Launcher) Send(text string, files []string) error {
 	l.mu.Lock()
 	ls := l.current
-	if ls.stale && ls.busy == 0 && ls.id != "" {
+	if ls.stale && ls.busy == 0 && ls.tasks == 0 && ls.id != "" {
 		// Resume afresh so the agent sees the turns another client added.
 		go ls.agent.Close()
 		ls.agent = l.newAgent(ls, ls.id)

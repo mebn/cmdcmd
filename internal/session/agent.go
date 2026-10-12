@@ -12,12 +12,16 @@ import (
 // Event is what the UI receives. Type is one of:
 //
 //	init        session started; SessionID is set
+//	start       a turn started that cmdcmd didn't send (Claude reacting to a
+//	            finished background task)
+//	tasks       the background tasks now running (Tasks)
 //	commands    the available slash commands (Commands)
 //	block       a new assistant text block starts
 //	text        streamed assistant text (Text)
 //	tool        the agent ran a tool (Tool, Text = short summary)
 //	tool_error  the last tool call failed (Text)
-//	done        the turn finished (IsError, Text on error, Cost)
+//	done        the turn finished (IsError, Text on error, Cost); Idle when
+//	            nothing is left running, whatever was sent meanwhile
 //	exit        the agent process exited unexpectedly (Text = reason)
 type Event struct {
 	Type      string    `json:"type"`
@@ -28,6 +32,15 @@ type Event struct {
 	Cost      float64   `json:"cost,omitempty"`
 	Commands  []Command `json:"commands,omitempty"`
 	Models    []Model   `json:"models,omitempty"`
+	Tasks     []Task    `json:"tasks,omitempty"`
+	Idle      bool      `json:"idle,omitempty"`
+}
+
+// Task is a background task an agent has running, such as a shell.
+type Task struct {
+	ID          string `json:"id"`
+	Kind        string `json:"kind"` // "local_bash", "local_agent", …
+	Description string `json:"description"`
 }
 
 // Command is a slash command or skill accepted as "/name args".

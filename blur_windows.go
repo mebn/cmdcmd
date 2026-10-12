@@ -32,6 +32,9 @@ var (
 	procIsWindowVisible   = user32.NewProc("IsWindowVisible")
 	procDwmSetWindowAttr  = windows.NewLazySystemDLL("dwmapi.dll").NewProc("DwmSetWindowAttribute")
 	procCreateDispatcherQ = windows.NewLazySystemDLL("CoreMessaging.dll").NewProc("CreateDispatcherQueueController")
+	comctl32              = windows.NewLazySystemDLL("comctl32.dll")
+	procSetWindowSubclass = comctl32.NewProc("SetWindowSubclass")
+	procDefSubclassProc   = comctl32.NewProc("DefSubclassProc")
 	combase               = windows.NewLazySystemDLL("combase.dll")
 	procRoActivate        = combase.NewProc("RoActivateInstance")
 	procWindowsCreateStr  = combase.NewProc("WindowsCreateString")
@@ -51,6 +54,7 @@ const (
 	swHide                   = 0
 	dwmaUseHostBackdropBrush = 17
 	dqThreadCurrent          = 2
+	wmWindowPosChanged       = 0x0047
 )
 
 var (
@@ -140,11 +144,14 @@ var backdrop struct {
 func setBlur(window *application.WebviewWindow, shapes []BlurShape) {
 	backdrop.once.Do(func() {
 		main := uintptr(window.NativeWindow())
-		application.InvokeSync(func() { createBackdrop(main) })
-		// Follow the main window around, and in and out of view.
-		window.OnWindowEvent(events.Common.WindowDidMove, func(*application.WindowEvent) {
-			application.InvokeAsync(placeBackdrop)
+		application.InvokeSync(func() {
+			createBackdrop(main)
+			// Follow the main window as it moves, in the same message: Wails
+			// reports moves only once a drag pauses, which leaves the blur
+			// behind while the window is dragged.
+			procSetWindowSubclass.Call(main, followMain, 1, 0)
 		})
+		// And in and out of view.
 		window.OnWindowEvent(events.Common.WindowShow, func(*application.WindowEvent) {
 			application.InvokeAsync(placeBackdrop)
 		})
@@ -158,6 +165,16 @@ func setBlur(window *application.WebviewWindow, shapes []BlurShape) {
 		placeBackdrop()
 	})
 }
+
+// followMain is the main window's subclass procedure; it moves the backdrop
+// along whenever the main window's position changes.
+var followMain = windows.NewCallback(func(hwnd, msg, wparam, lparam, id, data uintptr) uintptr {
+	r, _, _ := procDefSubclassProc.Call(hwnd, msg, wparam, lparam)
+	if msg == wmWindowPosChanged {
+		placeBackdrop()
+	}
+	return r
+})
 
 type wndClassEx struct {
 	Size       uint32

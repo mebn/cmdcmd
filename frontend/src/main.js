@@ -22,9 +22,10 @@ let attached = [];    // files to send with the next message: {path, name, previ
 
 // Every live session has its own history pane, so one running in the
 // background keeps streaming into it while another is on screen. A view is
-// {key, el, current, thinking, pending}: current is the assistant message
-// being streamed into ({el, text}), thinking the "Thinking…" placeholder and
-// pending the number of turns sent but not finished.
+// {key, el, current, thinking, pending, tasks}: current is the assistant
+// message being streamed into ({el, text}), thinking the "Thinking…"
+// placeholder, pending the number of turns sent but not finished and tasks
+// the background tasks (shells, agents) the agent has running.
 const views = new Map();
 let view = null; // the session on screen
 
@@ -34,7 +35,7 @@ function getView(key) {
         const el = document.createElement('div');
         el.className = 'history';
         chat.insertBefore(el, menu);
-        v = {key, el, current: null, thinking: null, pending: 0, renderQueued: false};
+        v = {key, el, current: null, thinking: null, pending: 0, tasks: [], renderQueued: false};
         views.set(key, v);
     }
     return v;
@@ -46,7 +47,23 @@ function showView(key) {
     view.el.classList.add('active');
     view.el.scrollTop = view.el.scrollHeight;
     sendButton.classList.toggle('busy', view.pending > 0);
+    renderTasks();
     updateLayout();
+}
+
+// Background tasks show in the chat's bottom corner rather than as
+// "Thinking…": the turn that started them is over, and Claude only picks up
+// again when one finishes.
+const tasksEl = document.getElementById('tasks');
+tasksEl._tip = () => ['Running in the background', ...(view?.tasks ?? []).map(t => t.description)];
+
+function renderTasks() {
+    const tasks = view?.tasks ?? [];
+    tasksEl.hidden = !tasks.length;
+    if (!tasks.length) return;
+    const shells = tasks.every(t => t.kind === 'local_bash');
+    const noun = shells ? 'background shell' : 'background task';
+    tasksEl.lastChild.textContent = `${tasks.length} ${noun}${tasks.length === 1 ? '' : 's'}`;
 }
 
 // dropViews forgets the panes of sessions that are no longer live.
@@ -239,13 +256,23 @@ Events.On('claude', ({data: ev}) => {
             tools[tools.length - 1]?.classList.add('failed');
             break;
         }
+        case 'start': // Claude took a turn on its own, after a background task
+            if (v.pending === 0) setBusy(v, +1);
+            break;
+        case 'tasks':
+            v.tasks = ev.tasks ?? [];
+            if (v === view) renderTasks();
+            break;
         case 'done':
             v.current = null;
             if (ev.isError) addText(v, 'system error', ev.text || 'Something went wrong.');
-            setBusy(v, -1);
+            // Idle: messages sent during the turn were folded into it.
+            setBusy(v, ev.idle ? null : -1);
             break;
         case 'exit':
             v.current = null;
+            v.tasks = [];
+            if (v === view) renderTasks();
             setBusy(v, null);
             addText(v, 'system error', 'Claude stopped' + (ev.text ? ': ' + ev.text : '.') + ' Your next message starts it again.');
             break;
@@ -766,7 +793,7 @@ function hideTip() {
 }
 
 document.addEventListener('mouseover', e => {
-    const el = e.target.closest('[data-tip], .chip, .folder-item');
+    const el = e.target.closest('[data-tip], .chip, .folder-item, #tasks');
     if (el === tipTarget) return;
     hideTip();
     if (!el) return;

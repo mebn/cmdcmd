@@ -733,7 +733,7 @@ svg {
    chat area) moves the window; the bars and anything you click or select
    don't. Wails reads this property. */
 #window { --wails-draggable: drag; }
-#window .msg, #window .thinking, #input, #window button, #menu, #notice, .bar { --wails-draggable: no-drag; }
+#window .msg, #window .thinking, #tasks, #input, #window button, #menu, #notice, .bar { --wails-draggable: no-drag; }
 
 /* ---------- notice ---------- */
 
@@ -899,6 +899,33 @@ svg {
     font-variant-numeric: tabular-nums;
 }
 @keyframes shimmer { from { background-position: 100% 0; } to { background-position: -100% 0; } }
+
+/* Background tasks still running, in the chat's bottom right corner. */
+#tasks {
+    position: absolute;
+    right: 4px;
+    bottom: 4px;
+    display: flex;
+    align-items: center;
+    gap: 7px;
+    padding: 4px 10px;
+    border-radius: 999px;
+    background: var(--surface-raised);
+    border: 0.5px solid var(--hairline);
+    font-size: 12px;
+    color: var(--text-2);
+    animation: fade 160ms ease;
+}
+#tasks[hidden] { display: none; }
+.tasks-dot {
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    background: var(--accent);
+    animation: pulse 1.6s ease-in-out infinite;
+}
+@keyframes pulse { 50% { opacity: 0.3; } }
+#chat.menu-open #tasks { visibility: hidden; }
 
 /* ---------- slash command menu ---------- */
 

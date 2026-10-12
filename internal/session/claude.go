@@ -24,7 +24,7 @@ type Claude struct {
 	stdin          io.WriteCloser
 	sessionID      string
 	closed         bool
-	busy           int  // turns sent but not finished
+	running        bool // a turn is in progress
 	restartPending bool // apply new settings once the current turn ends
 }
 
@@ -74,7 +74,7 @@ func (s *Claude) Send(text string, files []string) error {
 	if err := s.ensureStarted(); err != nil {
 		return err
 	}
-	s.busy++
+	s.running = true
 	return s.write(map[string]any{
 		"type":    "user",
 		"message": map[string]any{"role": "user", "content": content},
@@ -91,7 +91,7 @@ func (s *Claude) Configure(model, effort string) {
 	if s.cmd == nil {
 		return
 	}
-	if s.busy > 0 {
+	if s.running {
 		s.restartPending = true
 		return
 	}
@@ -219,7 +219,7 @@ func (s *Claude) read(cmd *exec.Cmd, stdout io.Reader, stderr *bytes.Buffer) {
 	current := s.cmd == cmd
 	if current {
 		s.cmd = nil
-		s.busy = 0
+		s.running = false
 	}
 	s.mu.Unlock()
 	if !current {
@@ -242,6 +242,11 @@ type streamMessage struct {
 	IsError         bool    `json:"is_error"`
 	Result          string  `json:"result"`
 	TotalCostUSD    float64 `json:"total_cost_usd"`
+	Tasks           []struct {
+		ID          string `json:"task_id"`
+		Kind        string `json:"task_type"`
+		Description string `json:"description"`
+	} `json:"tasks"`
 	Response        struct {
 		Subtype   string `json:"subtype"`
 		RequestID string `json:"request_id"`
@@ -300,11 +305,25 @@ func (s *Claude) handle(line []byte) {
 		}
 
 	case "system":
-		if m.Subtype == "init" {
+		switch m.Subtype {
+		case "init":
+			// Every turn starts with init, including the ones Claude starts
+			// itself when a background task finishes.
 			s.mu.Lock()
 			s.sessionID = m.SessionID
+			started := !s.running
+			s.running = true
 			s.mu.Unlock()
 			s.onEvent(Event{Type: "init", SessionID: m.SessionID})
+			if started {
+				s.onEvent(Event{Type: "start"})
+			}
+		case "background_tasks_changed":
+			tasks := []Task{}
+			for _, t := range m.Tasks {
+				tasks = append(tasks, Task{ID: t.ID, Kind: t.Kind, Description: t.Description})
+			}
+			s.onEvent(Event{Type: "tasks", Tasks: tasks})
 		}
 
 	case "stream_event":
@@ -330,15 +349,16 @@ func (s *Claude) handle(line []byte) {
 		}
 
 	case "result":
+		// Messages sent while a turn runs can be folded into it, so one
+		// result can end several sends. A message still queued starts a
+		// turn of its own, with init.
 		s.mu.Lock()
-		if s.busy > 0 {
-			s.busy--
-		}
-		if s.busy == 0 && s.restartPending {
+		s.running = false
+		if s.restartPending {
 			s.restart()
 		}
 		s.mu.Unlock()
-		ev := Event{Type: "done", Cost: m.TotalCostUSD, IsError: m.IsError || m.Subtype != "success"}
+		ev := Event{Type: "done", Idle: true, Cost: m.TotalCostUSD, IsError: m.IsError || m.Subtype != "success"}
 		if ev.IsError {
 			ev.Text = m.Result
 			if ev.Text == "" {
