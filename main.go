@@ -90,6 +90,10 @@ func main() {
 		Windows: application.WindowsWindow{
 			BackdropType:    application.None,
 			HiddenOnTaskbar: true,
+			// The frame decorations extend the DWM frame over the whole
+			// window, which paints the invisible stage white and draws a
+			// close button in its corner.
+			DisableFramelessWindowDecorations: true,
 		},
 	})
 
